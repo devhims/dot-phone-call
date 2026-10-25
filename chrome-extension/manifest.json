@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Dot Phone Call (local)",
+  "version": "0.2.0",
+  "description": "Start and end Dot's browser voice session for your paired Mac phone bridge.",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "nativeMessaging",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "http://127.0.0.1:8894/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/dots/*"
+      ],
+      "js": [
+        "microphone-route.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/dots/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Dot Phone Call (local)"
+  },
+  "options_page": "setup.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'; connect-src 'self' http://127.0.0.1:8894 ws://127.0.0.1:8893 https://*.twilio.com wss://*.twilio.com https://*.twiliocdn.com;"
+  }
+}
