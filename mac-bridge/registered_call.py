@@ -82,7 +82,14 @@ async def run_registered_call(companion, job):
         proc = await asyncio.create_subprocess_exec(str(RUNTIME/'audio-routing'), 'status', stdout=asyncio.subprocess.PIPE)
         output, _ = await proc.communicate()
         if proc.returncode: raise RuntimeError('AUDIO_ROUTING_FAILED')
-        if any('BlackHole' in d['name'] for d in json.loads(output).values()): raise RuntimeError('AUDIO_ROUTE_ALREADY_IN_USE')
+        defaults = json.loads(output)
+        virtual = [d for d in defaults.values() if d['name'].startswith('BlackHole ')]
+        if virtual:
+            # A selected default is not proof of an active client. Headset loss
+            # can leave idle BlackHole defaults behind after successful cleanup.
+            if any(d.get('running') is not False for d in virtual):
+                raise RuntimeError('AUDIO_ROUTE_ALREADY_IN_USE')
+            await companion.route('recover-idle')
         prepared = await companion.command('prepare')
         await verify_local_audio()
         await companion.route('enable')

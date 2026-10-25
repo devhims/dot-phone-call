@@ -57,6 +57,31 @@ class AudioPipeTests(unittest.IsolatedAsyncioTestCase):
         check.assert_not_awaited();companion.route.assert_not_awaited()
         companion.report.assert_called_with('failed','AUDIO_ROUTE_ALREADY_IN_USE')
 
+    async def test_idle_blackhole_defaults_are_recovered_before_browser_or_audio(self):
+        companion=SimpleNamespace(bridge_state=None,current={'id':'job'},cleanup_failed=False,
+            command=AsyncMock(side_effect=[RuntimeError('STOP_AFTER_PREFLIGHT'),{'ended':True}]),
+            route=AsyncMock(),cloud=AsyncMock(return_value={'ended':True}),report=MagicMock())
+        state={'input':{'name':'BlackHole 16ch','running':False},'output':{'name':'BlackHole 2ch','running':False}}
+        process=SimpleNamespace(returncode=0,communicate=AsyncMock(return_value=(json.dumps(state).encode(),None)))
+        with patch('registered_call.asyncio.create_subprocess_exec',return_value=process),patch('companion.SNAPSHOT') as snapshot,patch('companion.verify_local_audio',new=AsyncMock()) as check:
+            snapshot.exists.return_value=False
+            await run_registered_call(companion,{'id':'job','duration_seconds':60})
+        companion.route.assert_awaited_once_with('recover-idle')
+        check.assert_not_awaited()
+        companion.report.assert_called_with('failed','STOP_AFTER_PREFLIGHT')
+        self.assertEqual(companion.cloud.await_args_list[0].args[0],'registered-finish')
+
+    async def test_running_blackhole_defaults_remain_protected(self):
+        companion=SimpleNamespace(bridge_state=None,current={'id':'job'},cleanup_failed=False,
+            command=AsyncMock(return_value={'ended':True}),route=AsyncMock(),
+            cloud=AsyncMock(return_value={'ended':True}),report=MagicMock())
+        process=SimpleNamespace(returncode=0,communicate=AsyncMock(return_value=(b'{"input":{"name":"BlackHole 16ch","running":true}}',None)))
+        with patch('registered_call.asyncio.create_subprocess_exec',return_value=process),patch('companion.SNAPSHOT') as snapshot,patch('companion.verify_local_audio',new=AsyncMock()) as check:
+            snapshot.exists.return_value=False
+            await run_registered_call(companion,{'id':'job','duration_seconds':60})
+        companion.route.assert_not_awaited();check.assert_not_awaited()
+        companion.report.assert_called_with('failed','AUDIO_ROUTE_ALREADY_IN_USE')
+
     async def test_audio_pipe_accepts_only_the_paired_extension_origin(self):
         pipe=LocalAudioPipe(extension_id='a'*32)
         async with TestClient(TestServer(pipe.app())) as client:

@@ -138,7 +138,9 @@ class Companion:
 
     async def route(self, action):
         process = await asyncio.create_subprocess_exec(str(RUNTIME/'audio-routing'),action,str(SNAPSHOT))
-        if await process.wait(): raise RuntimeError('AUDIO_ROUTING_FAILED')
+        code = await process.wait()
+        if code:
+            raise RuntimeError({75:'AUDIO_ROUTE_ALREADY_IN_USE',76:'AUDIO_ROUTE_RECOVERY_UNAVAILABLE',77:'AUDIO_ROUTE_CHANGE_UNCONFIRMED'}.get(code,'AUDIO_ROUTING_FAILED'))
 
     async def cloud(self, action, data):
         async with self.http.post(self.config['origin']+'/companion/'+action,

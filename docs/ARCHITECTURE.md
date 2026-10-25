@@ -78,7 +78,7 @@ See `VALIDATION.md` for observed results and remaining live checks. Historical e
 - macOS bundle: `dev.dot-phone-call.helper`.
 - Login service: `dev.dot-phone-call.app`; the separately installed `dev.dot-phone-call.backend` service is retained only for older installations.
 
-The helper refuses to take over an existing BlackHole default route. Physical devices and the signed-in Dot tab are still shared resources, so do not run simultaneous calls from both projects. Global Mac output routing can include audio from other applications. Dot-only output isolation is not part of this integration.
+The helper refuses to take over an active BlackHole default route. Idle BlackHole defaults left after a headset disconnect recover to available built-in devices. Cleanup reads back the selected devices before removing its snapshot, and uses built-in audio when the saved device has disconnected. Physical devices and the signed-in Dot tab are still shared resources, so do not run simultaneous calls from both projects. Global Mac output routing can include audio from other applications. Dot-only output isolation is not part of this integration.
 
 A lost outgoing REST response is deliberately not retried. The journal retains the uncertain intent and blocks subsequent calls until the provider outcome is reconciled. This prevents a timeout from placing a duplicate call. Credentials and runtime call records remain local and ignored by Git.
 

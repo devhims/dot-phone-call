@@ -5,3 +5,4 @@ node_modules/
 .dev.vars
 .venv/
 __pycache__/
+.DS_Store

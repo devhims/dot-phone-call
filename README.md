@@ -182,6 +182,7 @@ On a fresh installation this removes the app login item. On a migrated installat
 | App installer fails | Check Node is on PATH, `.runtime/tunnel-client` is executable, the wizard completed, and ports 8894/8896 are unused. Inspect `.runtime/app-backend.log` and `.runtime/app-tunnel.log`. Fix the cause, then rerun the installer. |
 | Microphone denied | Open the extension's **Options** page to enable microphone access. Check macOS microphone permission for Chrome and Dot Phone Call Helper. |
 | Chrome disconnected | Load the extension in the correct profile and inspect its Errors page. Reload it after rebuilding. |
+| `AUDIO_ROUTE_ALREADY_IN_USE` | An active BlackHole device is protected from takeover. Idle BlackHole defaults left after a headset disconnect now recover to built-in audio automatically; close the application using BlackHole if the device is genuinely active. |
 | Audio diagnostic fails | Inspect `.runtime/native-helper-result.json` and `.runtime/native-helper.log`. Keep calling disabled until it passes. |
 | Unexpected music/background audio | Pause other audio applications. Current BlackHole routing can capture other system audio during a call. |
 | Dot controls unavailable | Confirm Dot voice works manually in Chrome. This integration depends on Dot's browser UI and may need updates when it changes. |

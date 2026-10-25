@@ -60,3 +60,11 @@ A temporary clean source copy started with no `.secrets`, `.runtime`, `.venv`, o
 The clean copy passed 96 JavaScript, 119 native-helper, 10 initial setup, and six supervisor tests. Two additional fresh-install/rollback tests brought the setup suite to 12 passing tests. The separate local stdio MCP probe also passed. Relative documentation links were checked. The existing installation and original project's source were unchanged.
 
 Remaining external verification: a different developer must complete their own Twilio and OpenAI account setup, Chrome/macOS permissions, and ChatGPT plugin discovery. The isolated build does not prove those permissions, a full reboot, or telephone-network behavior for a new account. npm reported the existing Zod advisory documented in the README; no dependency upgrade was included in this setup change.
+
+## Headset disconnect and idle BlackHole recovery
+
+A call failed before dialing because macOS selected BlackHole 16ch and 2ch as defaults after the owner disconnected their Sony headset. The headset was absent from the device list, the service had no active call or helper, and CoreAudio reported both BlackHole devices idle. The previous guard treated any BlackHole default as an active route. A regression test failed against that committed implementation and passed with the fix.
+
+Preflight now checks CoreAudio's device-running state and only recovers idle defaults to built-in microphone/speakers. The routing utility rechecks activity immediately before changing devices. Active or unknown state remains protected. Enable/restore wait for stable read-back; restore retains its snapshot if verification fails and uses available built-in audio when a saved device is absent.
+
+Live no-phone checks recovered the actual idle route, verified that a deliberately opened silent BlackHole output prevented takeover, and verified restoration when an isolated test snapshot referenced disconnected devices. Final defaults were MacBook Pro Microphone and MacBook Pro Speakers. All 121 native-helper tests passed. No phone call was retried. The updated routing binary is installed; no Chrome reload is required.
