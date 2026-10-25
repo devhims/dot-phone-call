@@ -1,4 +1,4 @@
-"""Replace only this project's two login services with Dot Phone.app; reversible."""
+"""Install Dot Phone.app on a fresh Mac or migrate this project's older services."""
 import argparse
 import json
 import os
@@ -9,6 +9,7 @@ import socket
 import subprocess
 import time
 import urllib.request
+from service_config import fresh_commands
 
 ROOT=Path(__file__).resolve().parents[1]
 RUNTIME=ROOT/'.runtime'
@@ -52,7 +53,20 @@ def wait_ports_closed():
 def write(path,data):
     path.write_bytes(data);path.chmod(0o600)
 
-def prepare():
+def prepare(fresh=False):
+    marker=RUNTIME/'background-install.json'
+    if fresh or (marker.exists() and json.loads(marker.read_text()).get('mode')=='fresh'):
+        if any((AGENTS/(label+'.plist')).exists() or loaded(label) for label in LEGACY):
+            raise RuntimeError('Existing separate services found; use --install without --fresh to migrate')
+        commands=fresh_commands(ROOT)
+        BACKUP.mkdir(mode=0o700,exist_ok=True)
+        if any((BACKUP/(label+'.plist')).exists() for label in LEGACY):
+            raise RuntimeError('Existing migration backup found; do not use --fresh')
+        write(BACKUP/'loaded.json',json.dumps({label:False for label in LEGACY}).encode())
+        write(RUNTIME/'background-services.json',json.dumps(commands).encode())
+        write(marker,json.dumps({'mode':'fresh'}).encode())
+        prepare_manifest()
+        return
     BACKUP.mkdir(mode=0o700,exist_ok=True)
     commands={}
     states={}
@@ -72,6 +86,9 @@ def prepare():
     statefile=BACKUP/'loaded.json'
     if not statefile.exists():write(statefile,json.dumps(states).encode())
     write(RUNTIME/'background-services.json',json.dumps(commands).encode())
+    prepare_manifest()
+
+def prepare_manifest():
     manifest={'Label':LABEL,'ProgramArguments':[str(APP)],'WorkingDirectory':str(ROOT),
       'AssociatedBundleIdentifiers':['dev.dot-phone-call.app'],'RunAtLoad':True,
       'KeepAlive':{'SuccessfulExit':False},'ThrottleInterval':10,'ExitTimeOut':50,
@@ -88,16 +105,22 @@ def restore():
         target.rename(RUNTIME/'menu-bar-app.disabled.plist')
     states=json.loads((BACKUP/'loaded.json').read_text())
     for label in LEGACY:
-        target=AGENTS/(label+'.plist');data=(BACKUP/target.name).read_bytes()
+        target=AGENTS/(label+'.plist');backup=BACKUP/target.name
+        if not backup.exists():
+            if states.get(label):raise RuntimeError('Missing legacy rollback backup')
+            continue
+        data=backup.read_bytes()
         if target.exists() and target.read_bytes()!=data:raise RuntimeError('Existing legacy service differs')
         write(target,data)
         if states.get(label):launch(label)
 
-def install():
+def install(fresh=False):
     if not APP.exists():raise RuntimeError('Build Dot Phone.app first')
-    assert_idle();prepare()
+    assert_idle()
+    AGENTS.mkdir(parents=True,exist_ok=True)
     target=AGENTS/(LABEL+'.plist')
     if target.exists() and plistlib.loads(target.read_bytes())['ProgramArguments']!=[str(APP)]:raise RuntimeError('App ownership mismatch')
+    prepare(fresh=fresh)
     try:
         bootout(LABEL)
         for label in LEGACY:bootout(label)
@@ -121,8 +144,9 @@ def install():
         raise
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--install',action='store_true');parser.add_argument('--restore',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--install',action='store_true');parser.add_argument('--restore',action='store_true');parser.add_argument('--fresh',action='store_true');args=parser.parse_args()
     if args.install and args.restore:parser.error('Choose install or restore')
-    if args.restore:restore();print('Restored separate login services; no call placed.')
-    elif args.install:install()
-    else:prepare();print('Prepared app configuration and rollback backup. Login services unchanged.')
+    if args.fresh and args.restore:parser.error('--fresh cannot be combined with --restore')
+    if args.restore:restore();print('Removed app login item; restored prior services when available. Private configuration retained; no call placed.')
+    elif args.install:install(fresh=args.fresh)
+    else:prepare(fresh=args.fresh);print('Prepared app configuration and rollback backup. Login services unchanged.')
