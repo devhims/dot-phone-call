@@ -1,6 +1,6 @@
 # Dot Phone background app
 
-The menu-bar app is a local management layer around the existing backend and Secure MCP Tunnel. It replaces this project's two login services with one service named `dev.dot-phone-call.app`. It does not modify Twilio routing, plugin identity, credentials, calling flags, Chrome extension identity, or the on-demand audio helper.
+The menu-bar app manages the local backend and Secure MCP Tunnel through one login service named `dev.dot-phone-call.app`. A fresh installation uses `scripts/install-background-app.py --fresh --install` after the README setup steps. Existing installations can migrate this project's two older login services with `--install`. It does not modify Twilio routing, plugin identity, credentials, calling flags, Chrome extension identity, or the on-demand audio helper.
 
 The current build lives at `.runtime/Dot Phone.app`. It is locally signed and references this checkout and its installed runtimes. It is not yet a standalone, notarized distribution package. Keep this project at its current path.
 
@@ -41,7 +41,7 @@ A normal quit exits successfully, so launchd does not immediately reopen the app
 - `.runtime/app-backend.log`, `.runtime/app-tunnel.log`, `.runtime/menu-bar-app.log`: local service logs.
 - `.runtime/login-items-before-app/`: exact recoverable copies of the prior two login-agent definitions.
 
-Use `scripts/install-background-app.py --restore` to restore the two previous login services. The installer only operates on this project's exact service names and verifies command ownership. The old hosted project's sources and services are outside this migration.
+Use `scripts/install-background-app.py --restore` to remove a fresh installation's app login item, or restore the two previous login services after a migration. Private configuration is retained. The installer only operates on this project's exact service names and verifies command ownership. The old hosted project's sources and services are outside this migration.
 
 ## Validation
 

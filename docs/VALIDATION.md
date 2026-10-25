@@ -50,3 +50,13 @@ A later request failed with BROWSER_COMMAND_FAILED during prepare, before audio 
 Preparation now waits for the requested Dot document to finish loading before checking controls, including after an automatic refresh. The native preparation deadline accommodates that bounded wait. Known Chrome failures now map to specific tab-closed, window-closed, access-denied, and controls-unavailable codes without persisting raw URLs.
 
 After the owner reloaded version 0.1.9, an automatic prepare-only diagnostic created a fresh Dot tab and passed in 2.59 seconds. Its result reported verified=true, dialed=false, cleanup_ok=true. It did not arm audio or start voice. All 90 JavaScript tests and 117 Python tests pass. The live result is saved in .runtime/native-helper-result.json. No failed phone request was retried.
+
+## Fresh developer setup, 25 October 2026
+
+The README now starts from a fresh clone and separates local setup from provider-account permissions. The interactive configuration wizard creates independent credentials/client identity and a salted PIN hash, preserves existing files, and leaves calls disabled. The app installer supports `--fresh --install` without either legacy login agent; its rollback removes the fresh app login item without inventing older services. The no-phone verifier checks hidden-browser readiness and only requests audio diagnostics while calling is disabled.
+
+A temporary clean source copy started with no `.secrets`, `.runtime`, `.venv`, or `node_modules`. `npm ci --ignore-scripts` and a new Python 3.11 virtual environment installed the locked dependencies. With dummy provider credentials, the extension generated a different identity, both apps compiled and passed code-signature verification, and the audio-routing binary compiled. Native-host registration used an isolated home directory, and fresh service preparation used isolated login-item paths. No real services were installed from this copy and no provider call was made.
+
+The clean copy passed 96 JavaScript, 119 native-helper, 10 initial setup, and six supervisor tests. Two additional fresh-install/rollback tests brought the setup suite to 12 passing tests. The separate local stdio MCP probe also passed. Relative documentation links were checked. The existing installation and original project's source were unchanged.
+
+Remaining external verification: a different developer must complete their own Twilio and OpenAI account setup, Chrome/macOS permissions, and ChatGPT plugin discovery. The isolated build does not prove those permissions, a full reboot, or telephone-network behavior for a new account. npm reported the existing Zod advisory documented in the README; no dependency upgrade was included in this setup change.
