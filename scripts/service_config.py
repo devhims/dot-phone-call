@@ -3,7 +3,20 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
+
+MIN_NODE_MAJOR = 24  # The backend uses node:sqlite; older Node fails at every login.
+
+
+def node_major(node):
+    """Major version of the Node binary the login item will run, or None."""
+    try:
+        output = subprocess.run([node, '--version'], capture_output=True, text=True, timeout=10).stdout
+    except OSError:
+        return None
+    match = re.fullmatch(r'v(\d+)\.\d+\.\d+\s*', output)
+    return int(match.group(1)) if match else None
 
 
 def fresh_commands(root, tunnel_id=None, node=None):
@@ -15,6 +28,12 @@ def fresh_commands(root, tunnel_id=None, node=None):
     node = node or shutil.which('node')
     if not node:
         raise ValueError('Node.js 24+ must be on PATH')
+    # The login item records this exact binary, so check it, not just the shell.
+    major = node_major(node)
+    if major is None or major < MIN_NODE_MAJOR:
+        found = f'Node {major}' if major else 'an unrecognized Node version'
+        raise ValueError(f'Node.js {MIN_NODE_MAJOR}+ is required, but {node} is {found}. '
+                         'Run `nvm use` (or install Node 24+), then rerun the installer.')
     binary = root / '.runtime/tunnel-client'
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError('Install the executable tunnel-client at .runtime/tunnel-client first')

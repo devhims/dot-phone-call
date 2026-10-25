@@ -19,10 +19,13 @@ def load(name, file):
 configure = load('configure_local', 'configure-local.py')
 installer = load('install_background_app', 'install-background-app.py')
 verify = load('verify_setup', 'verify-setup.py')
-from service_config import fresh_commands
+from service_config import fresh_commands, node_major as real_node_major
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
+        # Never execute a real Node binary from tests; version checks are covered below.
+        node_version = patch('service_config.node_major', return_value=24)
+        node_version.start();self.addCleanup(node_version.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -151,5 +154,23 @@ class SetupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'ready, idle'):
                 verify.check_audio(self.root,status_reader=lambda _:status)
         self.assertFalse((self.root/'.runtime/hidden-audio-test-request.json').exists())
+
+    def test_installer_refuses_node_older_than_24(self):
+        self.configured()
+        for version in (20, 22, None):
+            with patch('service_config.node_major', return_value=version), \
+                    self.assertRaisesRegex(ValueError, 'Node.js 24\\+ is required'):
+                fresh_commands(self.root, node='/usr/local/bin/node')
+        with patch('service_config.node_major', return_value=25):
+            self.assertIn('/usr/local/bin/node', fresh_commands(self.root, node='/usr/local/bin/node')['backend'][0])
+
+    def test_node_major_parses_version_output(self):
+        with patch('service_config.subprocess.run', return_value=type('R', (), {'stdout': 'v24.13.1\n'})()):
+            self.assertEqual(real_node_major('/usr/local/bin/node'), 24)
+        with patch('service_config.subprocess.run', return_value=type('R', (), {'stdout': 'not node\n'})()):
+            self.assertIsNone(real_node_major('/usr/local/bin/node'))
+        with patch('service_config.subprocess.run', side_effect=OSError):
+            self.assertIsNone(real_node_major('/missing/node'))
+
 
 if __name__ == '__main__':unittest.main()

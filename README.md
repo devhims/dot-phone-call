@@ -2,7 +2,7 @@
 
 Make and receive phone-number calls with your own ChatGPT Dot, using its native voice. Your Mac runs the calling backend and audio bridge; Twilio connects the telephone call. No additional language model is used.
 
-This is a **macOS developer installation from source**. Each developer supplies their own Twilio account, phone number, ChatGPT access, and Secure MCP Tunnel. You do not need the original `dot-phone-plugin` project, its hosted service, or any files from another developer's `.secrets` folder. There is no downloadable, notarized app installer yet.
+This is a **macOS developer installation from source**. Each developer supplies their own Twilio account, phone number, ChatGPT access, and Secure MCP Tunnel; no hosted service or shared credentials are involved. There is no downloadable, notarized app installer yet.
 
 ## Before you start
 
@@ -11,8 +11,8 @@ This is a **macOS developer installation from source**. Each developer supplies 
 | macOS 13 or later | The Mac must stay awake, online, and signed in while calls are available. |
 | Chrome with access to Dot | Open your Dot and confirm that its in-app voice works before installing this project. The extension currently controls `https://chatgpt.com/dots/*`. |
 | ChatGPT custom-plugin and tunnel access | Check this before spending time on setup. Account/workspace restrictions still apply; this repository cannot grant those permissions. |
-| Twilio | Use an account with a voice-capable number and permission to call your saved destination. Real phone calls use your Twilio balance. |
-| Build tools | [Node.js](https://nodejs.org/en/download) 24+, [Python](https://www.python.org/downloads/macos/) **3.11**, Git, and Xcode Command Line Tools. Python 3.13+ is not supported because retained audio code uses `audioop`. |
+| Twilio | A voice-capable Twilio number, and Voice **Geographic Permissions** enabled for your own phone's country (Console → Voice → Settings → Geo permissions). Trial accounts can call only verified numbers and play a trial announcement on each call. Real calls use your Twilio balance. |
+| Build tools | [Node.js](https://nodejs.org/en/download) **24+** (the repository's `.nvmrc` selects it with `nvm use`), [Python](https://www.python.org/downloads/macos/) **3.11**, Git, and Xcode Command Line Tools. Python 3.13+ is not supported because retained audio code uses `audioop`. |
 | Virtual audio | Install **both BlackHole 2ch and BlackHole 16ch** using the [official instructions](https://github.com/ExistentialAudio/BlackHole#installation-instructions). Restart if the installer requests it. |
 
 If you use Homebrew, BlackHole's documented commands are `brew install blackhole-2ch` and `brew install blackhole-16ch`. Install Apple's build tools with `xcode-select --install` if needed. Confirm both BlackHole devices appear in Audio MIDI Setup; leave your normal microphone and speakers selected as defaults.
@@ -21,7 +21,7 @@ Keep the checkout in a permanent location. Generated apps and services reference
 
 ## 1. Clone and install dependencies
 
-Clone this repository using its GitHub **Code** URL, then run the following from the checkout root. Every command below assumes that directory.
+Clone this repository using its GitHub **Code** URL, then run the following from the checkout root. Every command below assumes that directory. If you use nvm, run `nvm use` first in every new terminal you use for setup.
 
 ```sh
 node --version
@@ -93,15 +93,15 @@ For a **first installation**, run:
 .venv/bin/python scripts/install-background-app.py --fresh --install
 ```
 
-This creates one login item, `dev.dot-phone-call.app`, and starts the backend and tunnel. It does not require old login agents. Look for **Dot Phone** beside the macOS clock. Until Chrome is connected, an offline/disabled-calling status is expected.
+This creates one login item, `dev.dot-phone-call.app`, and starts the backend and tunnel. Look for **Dot Phone** beside the macOS clock. Until Chrome is connected, an offline/disabled-calling status is expected.
+
+The installer records the exact `node` binary on your `PATH` for the login item, and refuses anything older than Node 24. Run it from a terminal where `node --version` shows 24 or later. If you later remove or switch away from that Node installation, rerun this installer.
 
 In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select this checkout's `.runtime/dot-phone-extension` folder. Use the Chrome profile where you signed into Dot.
 
 When **Dot Phone audio setup** opens, click **Enable microphone** and allow access. You can close that setup page afterward. Chrome maintains the Twilio bridge in a hidden extension document; no localhost bridge tab is needed. The native **Dot Phone Call Helper** requests macOS microphone permission when its first audio check runs. Allow it in System Settings → Privacy & Security → Microphone if necessary. Chrome also needs microphone access for Dot voice.
 
 Wait for the app to show Chrome connected. Calling remains disabled until step 9.
-
-For an existing installation using this project's two older login agents, use `--install` **without** `--fresh`. That migration preserves their commands and rollback copies. Do not run the old service installers on a new installation.
 
 ## 6. Verify locally without dialing
 
@@ -120,17 +120,19 @@ Keep the app running. In [ChatGPT Plugins](https://chatgpt.com/plugins), choose 
 
 For this project's local backend, choose **no connector-level authentication**. The tunnel is controlled by your OpenAI account permissions, and its local client injects the backend's generated bearer credential from `.secrets/local-mcp-authorization.txt`. Do not enter your Twilio or OpenAI API keys in the plugin form.
 
+If Dot does not recognize **Dot Phone Local**, check that the plugin was created in the same ChatGPT account and workspace where you use Dot, and that it is enabled there.
+
 Verify discovery of `get_phone_service_status`, `prepare_owner_call`, `start_owner_call`, `get_owner_call`, and `end_owner_call`. Ask Dot to use **Dot Phone Local's `get_phone_service_status` only, without placing a call**. Expect `backend: local`, `mac_online: true`, and registered browser status. Calling is still disabled, so `can_request_native_dot_call: false` is expected at this stage. Do not count setup complete until this tool call succeeds through ChatGPT.
 
 ## 8. Configure incoming calls, if wanted
 
-Outgoing calling does not require this step. For incoming calls, create a new **TwiML Bin** in Twilio Console. Save it to obtain its URL, then render the instructions with that exact URL:
+Outgoing calling does not require this step. For incoming calls, create a new **TwiML Bin** in Twilio Console. Twilio will not save an empty Bin, so first save it with the placeholder `<Response></Response>` to obtain its URL. Then render the real instructions with that exact URL:
 
 ```sh
 node scripts/render-incoming-route.mjs https://handler.twilio.com/twiml/EH_YOUR_BIN_ID
 ```
 
-Replace `EH_YOUR_BIN_ID` with the actual Bin SID, `EH` plus 32 hexadecimal characters. Copy `.runtime/incoming-route.xml` into the Bin and save it. The XML prompts for six digits and routes to your generated client identity. It does not contain your PIN or API credentials.
+Replace `EH_YOUR_BIN_ID` with the actual Bin SID, `EH` plus 32 hexadecimal characters. Replace the placeholder with the contents of `.runtime/incoming-route.xml` and save the Bin again. The XML prompts for six digits and routes to your generated client identity. It does not contain your PIN or API credentials.
 
 Validate the saved instructions, then deliberately switch your Twilio number's incoming route:
 
@@ -143,14 +145,19 @@ These commands fetch/validate TwiML and update routing; they do not dial. The sw
 
 ## 9. Enable calling and make your first test call
 
-After the local audio check and ChatGPT status tool succeed, edit `.secrets/local-backend.json`. Preserve `mcp_token` and set:
+After the local audio check and ChatGPT status tool succeed, turn on both calling flags in `.secrets/local-backend.json`. This command changes only those two values and keeps your `mcp_token`:
 
-```json
-"calling_enabled": true,
-"allow_phone_dialing": true
+```sh
+.venv/bin/python -c "import json,pathlib;p=pathlib.Path('.secrets/local-backend.json');c=json.loads(p.read_text());c.update(calling_enabled=True,allow_phone_dialing=True);p.write_text(json.dumps(c,indent=2)+'\n')"
 ```
 
-This is a fragment to edit, not a replacement for the entire JSON file. Use **Dot Phone → Restart services** in the menu bar. Run `scripts/verify-setup.py` with `.venv/bin/python` again and ask Dot to check status. Expect **Ready for calls** and `can_request_native_dot_call: true`.
+Then use **Dot Phone → Restart services** in the menu bar and check readiness again:
+
+```sh
+.venv/bin/python scripts/verify-setup.py
+```
+
+Ask Dot to check status. Expect **Ready for calls** and `can_request_native_dot_call: true`. To turn calling off again, run the same command with both values set to `False` and restart services.
 
 Now explicitly ask Dot Phone Local to call you. Confirm audio in both directions, then hang up and confirm cleanup. If you configured incoming routing, call your Twilio number from the saved owner phone and enter the PIN. These are real telephone calls. Do not automatically retry a failed or uncertain outgoing request.
 
@@ -164,7 +171,18 @@ After quitting, relaunch with:
 launchctl kickstart "gui/$(id -u)/dev.dot-phone-call.app"
 ```
 
-Keep `.secrets/` and the checkout path when updating. Reinstall dependencies and rebuild changed apps/extension while idle. Reload **Dot Phone Call (local)** in Chrome after extension changes; it refreshes Dot's page when needed. Restart services for backend changes. Do not run simultaneous calls from two checkouts or the old project.
+Keep `.secrets/` and the checkout path when updating. Make changes while no call is active. After pulling updates, rerun `npm ci --ignore-scripts` and the pip install from step 1 if the lockfiles changed, then apply what each changed area needs:
+
+| Changed files | What to do |
+| --- | --- |
+| `browser/` or `chrome-extension/` | Rerun `node scripts/build-mac-extension.mjs --enable-calling --backend=local`, then reload **Dot Phone Call (local)** in `chrome://extensions`. Chrome keeps running the old copy until you reload it. |
+| `mac-bridge/*.py` | Nothing. The audio helper loads them at the start of each call. |
+| `src/` | **Dot Phone → Restart services**. |
+| `mac-app/` | `npm run build:app`, then **Dot Phone → Restart services**. |
+| `mac-bridge/launcher.swift` | `.venv/bin/python scripts/build-mac-app.py`. |
+| `mac-bridge/routing.swift` | Rerun the `swiftc` command from step 4. |
+
+Do not run simultaneous calls from two checkouts of this project.
 
 To stop the login installation while retaining source and private configuration:
 
@@ -172,13 +190,29 @@ To stop the login installation while retaining source and private configuration:
 .venv/bin/python scripts/install-background-app.py --restore
 ```
 
-On a fresh installation this removes the app login item. On a migrated installation it restores the saved older services. Finish any call first. To restore previous incoming routing, use `scripts/switch-incoming-route.py --restore --apply` with `.venv/bin/python`. That route backup belongs to your account; no hosted fallback service is supplied by this repository.
+This removes the app login item; finish any call first. Installations migrated from this project's earlier separate login services are covered in [background app](docs/BACKGROUND-APP.md). To restore your Twilio number's previous incoming routing:
+
+```sh
+.venv/bin/python scripts/switch-incoming-route.py --restore --apply
+```
+
+## Uninstall
+
+Finish any call, then:
+
+1. Run `.venv/bin/python scripts/install-background-app.py --restore` to remove the login item.
+2. If you switched incoming routing, restore it with the command above.
+3. Remove **Dot Phone Call (local)** in `chrome://extensions`.
+4. Delete the Chrome native-host registration: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.dot_phone_call.helper.json`.
+5. Delete the checkout. Its `.secrets/` folder holds your Twilio and OpenAI credentials; revoke the Twilio API key and OpenAI runtime key in their consoles if you no longer need them.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
 | Tunnel missing in ChatGPT | Match the account/workspace association and organization-level Tunnels Read + Use permissions. A Platform organization alone may not expose it to your ChatGPT workspace. |
+| macOS blocks `tunnel-client` | Confirm you downloaded it from OpenAI's official release, then allow it under System Settings → Privacy & Security and run `.runtime/tunnel-client help quickstart` again. |
+| Installer reports Node is too old | Run `nvm use` (or install Node 24+) so `node --version` shows 24 or later, then rerun the installer. |
 | App installer fails | Check Node is on PATH, `.runtime/tunnel-client` is executable, the wizard completed, and ports 8894/8896 are unused. Inspect `.runtime/app-backend.log` and `.runtime/app-tunnel.log`. Fix the cause, then rerun the installer. |
 | Microphone denied | Open the extension's **Options** page to enable microphone access. Check macOS microphone permission for Chrome and Dot Phone Call Helper. |
 | Chrome disconnected | Load the extension in the correct profile and inspect its Errors page. Reload it after rebuilding. |

@@ -1,6 +1,6 @@
 # Dot Phone background app
 
-The menu-bar app manages the local backend and Secure MCP Tunnel through one login service named `dev.dot-phone-call.app`. A fresh installation uses `scripts/install-background-app.py --fresh --install` after the README setup steps. Existing installations can migrate this project's two older login services with `--install`. It does not modify Twilio routing, plugin identity, credentials, calling flags, Chrome extension identity, or the on-demand audio helper.
+The menu-bar app manages the local backend and Secure MCP Tunnel through one login service named `dev.dot-phone-call.app`. A fresh installation uses `scripts/install-background-app.py --fresh --install` after the README setup steps. Existing installations can migrate this project's two older login services with `--install` (without `--fresh`); that preserves their commands and exact rollback copies. Do not run the old separate service installers on a new installation. It does not modify Twilio routing, plugin identity, credentials, calling flags, Chrome extension identity, or the on-demand audio helper.
 
 The current build lives at `.runtime/Dot Phone.app`. It is locally signed and references this checkout and its installed runtimes. It is not yet a standalone, notarized distribution package. Keep this project at its current path.
 
