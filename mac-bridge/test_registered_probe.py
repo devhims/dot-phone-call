@@ -98,7 +98,7 @@ class RegisteredHttpTests(unittest.IsolatedAsyncioTestCase):
         await socket.receive()
         self.assertEqual(socket.close_code, 1008)
         self.assertEqual(self.probe.audio_stats['received_frames'], 960)
-        np.testing.assert_array_equal(self.probe.audio_queue.get_nowait(), chunk)
+        np.testing.assert_array_equal(self.probe.playout.data, chunk)
 
 
 if __name__ == '__main__':

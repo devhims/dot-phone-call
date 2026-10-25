@@ -16,19 +16,9 @@ async def test_offscreen_audio(companion):
     try:
         # One duplex stream keeps playback and recording on the same CoreAudio
         # device clock. Separate AUHAL streams can invalidate each other.
-        import queue
         def duplex(indata,outdata,frames,timing,status):
             captured.append(indata[:,0].copy())
-            outdata.fill(0)
-            offset=0
-            while offset<frames:
-                if not len(pipe.pending_audio):
-                    try:pipe.pending_audio=pipe.audio_queue.get_nowait()
-                    except queue.Empty:break
-                count=min(frames-offset,len(pipe.pending_audio))
-                outdata[offset:offset+count]=pipe.pending_audio[:count,None]
-                pipe.pending_audio=pipe.pending_audio[count:]
-                offset+=count;pipe.audio_stats['played_frames']+=count
+            pipe.fill_playout(outdata,frames)
         device=find_device('BlackHole 16ch','input')
         capture=sd.Stream(device=(device,device),channels=(2,2),samplerate=48000,
             blocksize=960,dtype='float32',callback=duplex)
@@ -47,7 +37,7 @@ async def test_offscreen_audio(companion):
         data=np.concatenate(captured) if captured else np.empty(0)
         # Exclude startup silence; require sustained received tone, not one impulse.
         active=data[np.abs(data)>.001]
-        metrics={'browser':browser,'captured_frames':len(data),'active_frames':len(active),'native_audio':dict(pipe.audio_stats),'capture_active':capture.active,'output_active':[stream.active for stream in pipe.outputs]}
+        metrics={'browser':browser,'captured_frames':len(data),'active_frames':len(active),'native_audio':pipe.audio_metrics(),'capture_active':capture.active,'output_active':[stream.active for stream in pipe.outputs]}
         print(__import__('json').dumps({'event':'offscreen_audio_metrics',**metrics}),flush=True)
         if not capture.active:
             return {'verified':False,'dialed':False,'code':'OFFSCREEN_RECORDER_STOPPED',**metrics}
@@ -57,7 +47,9 @@ async def test_offscreen_audio(companion):
         signal=data[start:]
         rms=float(np.sqrt(np.mean(signal**2)))
         peak=float(np.fft.rfftfreq(len(signal),1/48000)[np.argmax(np.abs(np.fft.rfft(signal)))])
-        if not .015<rms<.15 or abs(peak-997)>5:raise RuntimeError('OFFSCREEN_AUDIO_TONE_MISMATCH')
+        # The tone passes through the phone-bound voice shaping, which levels
+        # it toward telephone loudness: -27 dBFS in arrives near -13 dBFS.
+        if not .015<rms<.45 or abs(peak-997)>5:raise RuntimeError('OFFSCREEN_AUDIO_TONE_MISMATCH')
         return {'verified':True,'dialed':False,'browser':browser,'rms':round(rms,4),
                 'peak_hz':round(peak,1),'received_frames':pipe.audio_stats['received_frames'],**metrics}
     finally:

@@ -3,7 +3,6 @@ import asyncio
 import contextlib
 import json
 import secrets
-import queue
 import numpy as np
 from aiohttp import WSMsgType
 from types import SimpleNamespace
@@ -47,13 +46,7 @@ class LocalAudioPipe(RegisteredProbe):
                     await ws.close(code=1008)
                     break
                 self.audio_stats['received_peak'] = max(self.audio_stats.get('received_peak',0.0),float(np.max(np.abs(samples))))
-                self.audio_stats['received_frames'] += len(samples)
-                if self.audio_queue.full():
-                    try:
-                        self.audio_queue.get_nowait()
-                        self.audio_stats['dropped_chunks'] += 1
-                    except queue.Empty: pass
-                self.audio_queue.put_nowait(samples)
+                self.queue_audio(samples)
             return ws
         finally:
             self.sockets.discard(ws)
@@ -133,6 +126,8 @@ async def run_registered_call(companion, job):
             await runner.cleanup()
         except Exception:
             companion.cleanup_failed = True
+        # Phone-to-Dot playout health: no audio content, only counters.
+        print(json.dumps({'event':'registered_audio_closed',**pipe.audio_metrics()}),flush=True)
         try:
             result = await companion.command('end',job_id=job['id'])
             if not result.get('ended'): raise RuntimeError('DOT_HANGUP_NOT_CONFIRMED')

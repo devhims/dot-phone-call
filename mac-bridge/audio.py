@@ -34,7 +34,7 @@ class SampleQueue:
         self.data = np.empty(0, dtype=np.float32)
         self.capacity = capacity
         self.lock = threading.Lock()
-        self.dropped = self.drained = 0
+        self.dropped = self.drained = self.played = 0
         self.drain_above = drain_above
         self.prebuffer = prebuffer
         self.priming = bool(prebuffer)
@@ -69,6 +69,7 @@ class SampleQueue:
             count = min(size, len(self.data))
             out[:count] = self.data[:count]
             self.data = self.data[count:]
+            self.played += count
             return out
 
     def _drain_quiet(self, size):

@@ -68,3 +68,14 @@ A call failed before dialing because macOS selected BlackHole 16ch and 2ch as de
 Preflight now checks CoreAudio's device-running state and only recovers idle defaults to built-in microphone/speakers. The routing utility rechecks activity immediately before changing devices. Active or unknown state remains protected. Enable/restore wait for stable read-back; restore retains its snapshot if verification fails and uses available built-in audio when a saved device is absent.
 
 Live no-phone checks recovered the actual idle route, verified that a deliberately opened silent BlackHole output prevented takeover, and verified restoration when an isolated test snapshot referenced disconnected devices. Final defaults were MacBook Pro Microphone and MacBook Pro Speakers. All 121 native-helper tests passed. No phone call was retried. The updated routing binary is installed; no Chrome reload is required.
+
+## Telephone voice shaping and phone-to-Dot jitter buffer
+
+The audio fixes from the original bridge were present but unused: calls take the registered browser path, which sent Dot's voice through a flat 1.4x gain with no limiter, and played phone audio without a prebuffer.
+
+Dot-to-phone audio now passes through `phone-voice`, an AudioWorklet port of `mac-bridge/phone_voice.py` at 48 kHz: a 4.4 kHz fourth-order low-pass, a 260 Hz high-pass, a +6 dB shelf at 2 kHz, the same leveler (-12 dBFS envelope target, -10 to +15 dB) and the same soft limiter. In the telephone band its response is within 1 dB of the bridge chain: -5.9 dB at 200 Hz, +4.8 dB at 3 kHz and +4.9 dB at 3.4 kHz. Tones spanning 17.5 dB of input level land within 3.4 dB of each other. Rendering in Chrome through `OfflineAudioContext` matched the main-thread implementation within 0.1 dB, with loud input held at a 0.949 peak.
+
+Phone-to-Dot playout uses the bridge's `SampleQueue`: three 20 ms chunks of prebuffer, whole-chunk refill after a shortfall, quiet-only drain above 100 ms and a 500 ms hard bound. With two chunks delayed every second, the previous playout spliced in 40 ms of silence; the new playout has none. `registered_audio_closed` logs received and played frames, underrun, rebuffer, drained and dropped counters after each call.
+
+The hidden-page diagnostic's tone bound is now 0.015-0.45 RMS, because the shaping levels its -27 dBFS tone to about -13 dBFS. 105 JavaScript and 127 native-helper tests passed, plus the setup, supervisor and tunnel suites. No phone was dialed. The browser changes take effect after rebuilding and reloading the extension. A first live call before the rebuild still used the flat gain; after rebuilding and reloading, the owner confirmed on 2026-10-25 that a live call sounded good.
+

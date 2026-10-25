@@ -11,9 +11,12 @@ export class AudioSession {
     if(this.stream.getAudioTracks()[0].getSettings().deviceId!==input.deviceId)throw Error('WRONG_MICROPHONE');
     this.context=new AudioContext({sampleRate:48000});await this.context.setSinkId({type:'none'});await this.context.resume();
     if(this.context.state!=='running')throw Error('AUDIO_CONTEXT_SUSPENDED');
-    this.gain=this.context.createGain();this.gain.gain.value=1.4;
+    // Telephone voice shaping (band limit, bass cut, consonant lift, leveling, limiter).
+    await this.context.audioWorklet.addModule(new URL('./phone-voice-worklet.js',import.meta.url).href);
+    if(this.closed)throw Error('CALL_CANCELED');
+    this.voice=new AudioWorkletNode(this.context,'phone-voice',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit'});
     this.destination=this.context.createMediaStreamDestination();
-    this.context.createMediaStreamSource(this.stream).connect(this.gain).connect(this.destination);
+    this.context.createMediaStreamSource(this.stream).connect(this.voice).connect(this.destination);
     this.socket=new this.Socket('ws://127.0.0.1:8893/audio');
     await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>reject(Error('AUDIO_SOCKET_TIMEOUT')),5000);
@@ -34,7 +37,7 @@ export class AudioSession {
     this.source.connect(this.worklet).connect(this.context.destination);
   }
   async close() {
-    this.closed=true;this.source?.disconnect();this.worklet?.disconnect();this.socket?.close();
+    this.closed=true;this.source?.disconnect();this.worklet?.disconnect();this.voice?.disconnect();this.socket?.close();
     for(const stream of [this.stream,this.destination?.stream])stream?.getTracks().forEach(t=>t.stop());
     if(this.context&&this.context.state!=='closed')await this.context.close();
   }

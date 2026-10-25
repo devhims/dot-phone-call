@@ -45,8 +45,9 @@ The browser remains registered while idle without opening the microphone. The ex
 - `src/registered-calls.mjs`: registered-client authorization, token renewal, provider calls, and durable recovery.
 - `src/local-backend.mjs`, `local-main.mjs`, `local-queue.mjs`: private HTTP MCP, companion API, and SQLite queue.
 - `browser/`: persistent registration, incoming call screening, per-call audio, and browser cleanup.
+- `browser/phone-voice.js`, `phone-voice-worklet.js`: Dot-to-phone telephone voice shaping on the audio thread (phone-band limit, bass cut, consonant lift, leveling, soft limiter), ported from `mac-bridge/phone_voice.py`.
 - `chrome-extension/`: automatic bridge startup, Dot controls, microphone selection, and native messaging.
-- `mac-bridge/registered_call.py`: per-call 48 kHz PCM playback to BlackHole and verified audio restoration.
+- `mac-bridge/registered_call.py`: per-call 48 kHz PCM playback to BlackHole through a prebuffered jitter buffer, and verified audio restoration.
 - `mac-bridge/companion.py`: the registered-client path is the default. Older transport code is retained only as an explicit legacy implementation.
 - `prototype/registered/`: separate client-to-client audio experiment. Never use the saved-owner prototype as a no-phone test.
 - `scripts/`: independent builds, installation, configuration, and incoming TwiML rendering.

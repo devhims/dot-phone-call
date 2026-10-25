@@ -13,10 +13,11 @@ import secrets
 import signal
 import time
 import os
-import queue
 import fcntl
 import numpy as np
 import sounddevice as sd
+
+from audio import SampleQueue
 
 from aiohttp import web
 from twilio.jwt.access_token import AccessToken
@@ -28,6 +29,19 @@ from twilio.twiml.voice_response import VoiceResponse
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / '.runtime'
 TERMINAL = {'completed', 'canceled', 'failed', 'busy', 'no-answer'}
+RATE = 48000
+CHUNK = 960  # 20 ms PCM chunks from the browser worklet.
+
+
+def playout_queue():
+    """Phone-to-Dot jitter buffer between the browser and BlackHole 16ch.
+
+    The worklet and CoreAudio run on different clocks and the WebSocket adds
+    scheduling jitter. Three chunks of prebuffer absorb it; shortfalls refill
+    instead of splicing silence into partial chunks. Delay above 100 ms is
+    removed only from quiet audio; 500 ms is a hard bound.
+    """
+    return SampleQueue(capacity=RATE // 2, prebuffer=3 * CHUNK, drain_above=RATE // 10)
 
 
 class RegisteredProbe:
@@ -40,9 +54,8 @@ class RegisteredProbe:
         self.issued = self.started = False
         self.native_audio = native_audio
         self.outputs = []
-        self.audio_queue = queue.Queue(maxsize=12)
-        self.pending_audio = np.empty(0, dtype=np.float32)
-        self.audio_stats = {'received_frames': 0, 'played_frames': 0, 'dropped_chunks': 0}
+        self.playout = playout_queue()
+        self.audio_stats = {'received_frames': 0}
         self.audio_capability = secrets.token_urlsafe(32)
         self.audio_claimed = False
         self.audio_lock = None
@@ -120,19 +133,7 @@ class RegisteredProbe:
             data[:] = (.06 * np.sin(2*np.pi*997*(np.arange(frames)+phase)/48000))[:, None]
             phase += frames
         def playout(data, frames, timing, status):
-            data.fill(0)
-            offset = 0
-            while offset < frames:
-                if not len(self.pending_audio):
-                    try:
-                        self.pending_audio = self.audio_queue.get_nowait()
-                    except queue.Empty:
-                        break
-                count = min(frames-offset, len(self.pending_audio))
-                data[offset:offset+count] = self.pending_audio[:count, None]
-                self.pending_audio = self.pending_audio[count:]
-                offset += count
-                self.audio_stats['played_frames'] += count
+            self.fill_playout(data, frames)
         outputs = [('BlackHole 16ch', playout)]
         if fixture:
             outputs.insert(0, ('BlackHole 2ch', fixture_output))
@@ -141,6 +142,22 @@ class RegisteredProbe:
                                      blocksize=960, dtype='float32', callback=callback)
             self.outputs.append(stream)
             stream.start()
+
+    def queue_audio(self, samples):
+        self.audio_stats['received_frames'] += len(samples)
+        self.playout.put(samples)
+
+    def fill_playout(self, data, frames):
+        """Write one CoreAudio block of phone audio; safe on the audio thread."""
+        data[:] = self.playout.take(frames)[:, None]
+
+    def audio_metrics(self):
+        queue_ = self.playout
+        return {**self.audio_stats, 'played_frames': queue_.played,
+                'dropped_ms': round(queue_.dropped / RATE * 1000, 2),
+                'drained_ms': round(queue_.drained / RATE * 1000, 2),
+                'underrun_ms': round(queue_.underrun_samples / RATE * 1000, 2),
+                'rebuffers': queue_.rebuffers}
 
     async def audio(self, request):
         self.check(request)
@@ -165,14 +182,7 @@ class RegisteredProbe:
                 if not np.isfinite(samples).all() or np.max(np.abs(samples)) > 1:
                     await ws.close(code=1008)
                     break
-                self.audio_stats['received_frames'] += len(samples)
-                if self.audio_queue.full():
-                    try:
-                        self.audio_queue.get_nowait()
-                        self.audio_stats['dropped_chunks'] += 1
-                    except queue.Empty:
-                        pass
-                self.audio_queue.put_nowait(samples)
+                self.queue_audio(samples)
         self.sockets.discard(ws)
         return ws
 
@@ -259,7 +269,7 @@ class RegisteredProbe:
         if self.audio_lock is not None:
             self.audio_lock.close()
             self.audio_lock = None
-        self.report['native_audio'] = {**self.audio_stats, 'streams_closed': all(s.closed for s in self.outputs)}
+        self.report['native_audio'] = {**self.audio_metrics(), 'streams_closed': all(s.closed for s in self.outputs)}
         try:
             # Also discover a call whose creation response was lost.
             for identity in self.identities:

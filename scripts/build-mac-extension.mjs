@@ -20,7 +20,7 @@ const localBackend=process.argv.includes('--backend=local');
 await mkdir(output,{recursive:true,mode:0o700});
 for(const file of ['background.js','content.js','microphone-route.js','helper-client.js','offscreen-control.js','offscreen.html','setup.html','setup.js','setup.css']) await copyFile(new URL('chrome-extension/'+file,root),new URL(file,output));
 await mkdir(new URL('bridge/',output),{recursive:true});
-for(const file of ['app.js','session.js','diagnostic.js'])await copyFile(new URL('browser/'+file,root),new URL('bridge/'+file,output));
+for(const file of ['app.js','session.js','diagnostic.js','phone-voice.js','phone-voice-worklet.js'])await copyFile(new URL('browser/'+file,root),new URL('bridge/'+file,output));
 await copyFile(new URL('prototype/registered/pcm-worklet.js',root),new URL('bridge/pcm-worklet.js',output));
 await copyFile(new URL('node_modules/@twilio/voice-sdk/dist/twilio.min.js',root),new URL('bridge/twilio.min.js',output));
 const manifest=JSON.parse(await readFile(new URL('chrome-extension/manifest.json',root),'utf8'));
