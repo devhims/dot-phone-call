@@ -1,0 +1,5 @@
+{
+  "mcp_token": "REPLACE_WITH_AN_INDEPENDENT_RANDOM_TOKEN",
+  "calling_enabled": false,
+  "allow_phone_dialing": false
+}

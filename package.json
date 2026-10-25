@@ -1,0 +1,24 @@
+{
+  "name": "dot-phone-call",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/local-main.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:python": ".venv/bin/python -m unittest discover -s mac-bridge -p \"test_*.py\"",
+    "test:tunnel": "node scripts/test-secure-tunnel-probe.mjs",
+    "build:extension": "node scripts/build-mac-extension.mjs",
+    "test:app": ".venv/bin/python -m unittest discover -s mac-app -p \"test_*.py\"",
+    "build:app": ".venv/bin/python scripts/build-background-app.py"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@twilio/voice-sdk": "2.18.5",
+    "zod": "^3.25.76"
+  },
+  "description": "Local Dot phone calling source, queue, browser controls, and native audio bridge",
+  "engines": {
+    "node": ">=24"
+  }
+}

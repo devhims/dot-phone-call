@@ -1,0 +1,7 @@
+node_modules/
+.secrets/
+.runtime/
+.wrangler/
+.dev.vars
+.venv/
+__pycache__/
