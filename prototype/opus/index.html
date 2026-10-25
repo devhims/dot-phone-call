@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Dot Opus bridge prototype</title>
+<style>
+body{font:16px system-ui,sans-serif;background:#f7f8fa;color:#15202b;max-width:850px;margin:48px auto;padding:0 24px}h1{font-size:28px}button{font:inherit;padding:12px 18px;margin:8px 8px 8px 0;border:1px solid #bcc6d2;border-radius:8px;background:white;color:#15202b}button:disabled{opacity:.5}pre{white-space:pre-wrap;background:white;border:1px solid #d5dce5;padding:20px;border-radius:8px;font-size:13px}#status{font-weight:600}small{display:block;color:#465568}
+</style>
+<h1>Dot Opus bridge prototype</h1>
+<p>Test wideband audio through Twilio between two temporary browser clients.
+The phone-number route is disabled by default.</p>
+<p>Allow microphone access to discover BlackHole. Test audio uses virtual devices
+and generated tones. It does not use your physical microphone for the call.</p>
+<label>Opus bitrate <select id="bitrate"><option value="40000">40 kbps</option><option value="128000">128 kbps</option></select></label>
+<button id="probe">Run no-phone Opus test</button>
+<button id="local">Test local Opus only</button>
+<button id="route">Test virtual devices only</button>
+<button id="owner" disabled>Call saved phone number</button>
+<button id="stop">Stop audio</button><button id="shutdown">Shut down prototype</button>
+<p id="status">Ready to test</p>
+<p id="summary"></p>
+<small>Production calling remains on the existing bridge until this prototype is verified.</small>
+<pre id="report">No test has run.</pre>
+<script src="/twilio.min.js"></script><script type="module" src="/app.js"></script>
+</html>
