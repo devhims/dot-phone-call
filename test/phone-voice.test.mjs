@@ -99,7 +99,8 @@ test('browser modules loaded by the call session are served and packaged', () =>
   const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
   const session = read('../browser/session.js'), worklet = read('../browser/phone-voice-worklet.js');
   const files = [...session.matchAll(/new URL\('\.\/([\w.-]+\.js)'/g), ...worklet.matchAll(/from '\.\/([\w.-]+\.js)'/g)].map(m => m[1]);
-  assert.ok(files.includes('phone-voice-worklet.js') && files.includes('phone-voice.js') && files.includes('pcm-worklet.js'));
+  assert.ok(files.includes('phone-voice-worklet.js') && files.includes('phone-voice.js'));
+  assert.ok(!session.includes('8893') && !session.includes('pcm-worklet'), 'no helper audio socket remains');
   const backend = read('../src/local-backend.mjs'), build = read('../scripts/build-mac-extension.mjs');
   for (const file of files) {
     assert.ok(backend.includes(`'/bridge/${file}'`), `${file} is served by the local backend`);
@@ -107,31 +108,38 @@ test('browser modules loaded by the call session are served and packaged', () =>
   }
 });
 
-test('the call session routes BlackHole audio through phone-voice instead of a flat gain', async () => {
+test('the call session shapes Dot through phone-voice and plays phone audio to BlackHole 16ch', async () => {
   const modules = [], connections = [];
   const node = name => ({name, connect(target) {connections.push([name, target.name]); return target;}, disconnect() {}});
   class AudioContext {
-    constructor(options) {this.options = options; this.state = 'suspended';
+    constructor(options) {this.options = options; this.state = 'suspended'; this.sinkId = '';
+      this.destination = node('phone-output');
       this.audioWorklet = {addModule: async url => {modules.push(url.split('/').at(-1));}};}
-    async setSinkId() {} async resume() {this.state = 'running';} async close() {this.state = 'closed';}
+    async setSinkId(id) {this.sinkId = id;} async resume() {this.state = 'running';} async close() {this.state = 'closed';}
     createGain() {throw Error('flat gain must not be used');}
-    createMediaStreamDestination() {return {...node('destination'), stream: {getTracks: () => []}};}
-    createMediaStreamSource() {return node('blackhole');}
+    createMediaStreamDestination() {return {...node('to-twilio'), stream: {getTracks: () => []}};}
+    createMediaStreamSource(stream) {return node(stream.name);}
   }
   class AudioWorkletNode {constructor(context, name, options) {Object.assign(this, node(name), {options});}}
-  class Socket {constructor() {setTimeout(() => {this.onopen(); this.onmessage({data: 'ready'});});} send() {} close() {}}
-  const track = {getSettings: () => ({deviceId: 'bh2'}), stop() {}};
-  Object.assign(globalThis, {AudioContext, AudioWorkletNode});
+  const track = {getSettings: () => ({deviceId: 'bh2-in'}), stop() {}};
+  Object.assign(globalThis, {AudioContext, AudioWorkletNode,
+    WebSocket: class {constructor() {throw Error('no audio socket may be opened');}}});
   // Node 24 defines a read-only navigator; replace it for this browser module.
   Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {
     permissions: {query: async () => ({state: 'granted'})},
-    mediaDevices: {enumerateDevices: async () => [{kind: 'audioinput', label: 'BlackHole 2ch', deviceId: 'bh2'}],
-      getUserMedia: async () => ({getAudioTracks: () => [track], getTracks: () => [track]})}}});
+    mediaDevices: {enumerateDevices: async () => [
+        {kind: 'audioinput', label: 'BlackHole 2ch', deviceId: 'bh2-in'},
+        {kind: 'audiooutput', label: 'BlackHole 16ch (Virtual)', deviceId: 'bh16-out'},
+        {kind: 'audiooutput', label: 'MacBook Pro Speakers', deviceId: 'speakers'}],
+      getUserMedia: async () => ({name: 'blackhole-2ch', getAudioTracks: () => [track], getTracks: () => [track]})}}});
   const {AudioSession} = await import('../browser/session.js');
-  const session = new AudioSession({capability: 'x'.repeat(40), WebSocketClass: Socket});
+  const session = new AudioSession();
   await session.prepare();
-  assert.deepEqual(connections, [['blackhole', 'phone-voice'], ['phone-voice', 'destination']]);
+  assert.equal(session.context.sinkId, 'bh16-out');
+  assert.deepEqual(modules, ['phone-voice-worklet.js']);
+  assert.deepEqual(connections, [['blackhole-2ch', 'phone-voice'], ['phone-voice', 'to-twilio']]);
+  await session.remote({getRemoteStream: () => ({name: 'twilio-remote'})});
+  assert.deepEqual(connections.at(-1), ['twilio-remote', 'phone-output']);
   assert.equal(session.voice.options.outputChannelCount[0], 1);
-  assert.deepEqual(modules, ['phone-voice-worklet.js', 'pcm-worklet.js']);
   await session.close();
 });

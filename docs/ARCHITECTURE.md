@@ -8,7 +8,7 @@ In the original developer installation, the existing `dot-phone-plugin` source, 
 
 ## Call lifecycle
 
-For example, when you call your Twilio number, Twilio collects the six-digit PIN and offers the call to this project's registered browser. The local backend checks the actual parent and child call records with Twilio, verifies your saved caller number and PIN, and queues the call. The extension starts the native audio helper. Once the audio route is ready, the browser accepts and the helper starts Dot.
+For example, when you call your Twilio number, Twilio collects the six-digit PIN and offers the call to this project's registered browser. The local backend checks the actual parent and child call records with Twilio, verifies your saved caller number and PIN, and queues the call. The extension starts the native helper, which sequences the call. The hidden page prepares its BlackHole audio, the browser accepts, and the helper starts Dot. Audio never passes through the helper, and the Mac's default devices are not changed: Dot's tab routes its own playback to BlackHole 2ch, and the hidden page plays phone audio to BlackHole 16ch.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#e2e8f0', 'actorTextColor': '#111827', 'actorBorder': '#334155', 'signalColor': '#334155', 'signalTextColor': '#111827', 'sequenceNumberColor': '#ffffff'}}}%%
@@ -28,12 +28,11 @@ sequenceDiagram
     H->>L: Claim local job
     H->>B: Prepare authenticated audio pipe
     B->>T: Accept authorized call
-    H->>D: Start voice and verify microphone
+    H->>D: Start voice, verify microphone and output routing
     P<<->>D: Audio through Twilio, browser and BlackHole
     L->>T: End owned phone call
     B->>L: Confirm audio tracks released
-    H->>D: Hang up voice
-    H->>H: Restore original Mac audio devices
+    H->>D: Hang up voice and restore Dot's output
 ```
 
 Outgoing requests follow the same local queue and audio preparation. The backend dials only the saved number after the browser confirms audio readiness. Dot starts after the phone answers. There is no diagnostic arm file or manual bridge-page step in the normal call path.
@@ -47,7 +46,8 @@ The browser remains registered while idle without opening the microphone. The ex
 - `browser/`: persistent registration, incoming call screening, per-call audio, and browser cleanup.
 - `browser/phone-voice.js`, `phone-voice-worklet.js`: Dot-to-phone telephone voice shaping on the audio thread (phone-band limit, bass cut, consonant lift, leveling, soft limiter), ported from `mac-bridge/phone_voice.py`.
 - `chrome-extension/`: automatic bridge startup, Dot controls, microphone selection, and native messaging.
-- `mac-bridge/registered_call.py`: per-call 48 kHz PCM playback to BlackHole through a prebuffered jitter buffer, and verified audio restoration.
+- `mac-bridge/registered_call.py`: per-call sequencing only: prepare Dot, start it after answer, watch Dot and its output routing, and finish. No audio passes through it.
+- `chrome-extension/microphone-route.js`: during an armed call, forces Dot's microphone to BlackHole 16ch and routes Dot's audio elements and audio contexts to BlackHole 2ch, then restores them.
 - `mac-bridge/companion.py`: the registered-client path is the default. Older transport code is retained only as an explicit legacy implementation.
 - `prototype/registered/`: separate client-to-client audio experiment. Never use the saved-owner prototype as a no-phone test.
 - `scripts/`: independent builds, installation, configuration, and incoming TwiML rendering.
@@ -63,7 +63,7 @@ npm run test:python
 npm run test:tunnel
 ```
 
-These use mocked provider calls and audio devices, temporary HTTP/WebSocket listeners, and in-memory audio. They cover incoming PIN/caller checks, outgoing audio gating, at-most-once dialing, uncertain-result recovery, cancellation, token renewal, automatic browser registration, authenticated PCM, track release, and helper cleanup. No phone is dialed.
+These use mocked provider calls and audio devices, temporary HTTP/WebSocket listeners, and in-memory audio. They cover incoming PIN/caller checks, outgoing audio gating, at-most-once dialing, uncertain-result recovery, cancellation, token renewal, automatic browser registration, Dot output routing and its gate, track release, and helper cleanup. No phone is dialed.
 
 For a spoken Dot test, build with `--audio-test --enable-calling` and load or reload this project's extension. That diagnostic cannot invoke Twilio. It requires `whisper-cli` and `.runtime/ggml-base.en.bin`. It runs once per generated test ID and reports in `.runtime/browser-audio-test-result.json` and `.runtime/native-helper-result.json`.
 
@@ -74,12 +74,11 @@ See `VALIDATION.md` for observed results and remaining live checks. Historical e
 ## Resource isolation and limits
 
 - Private backend and browser page: `127.0.0.1:8894`.
-- Per-call native audio WebSocket: `127.0.0.1:8893`.
 - Native host: `dev.dot_phone_call.helper`.
 - macOS bundle: `dev.dot-phone-call.helper`.
 - Login service: `dev.dot-phone-call.app`; the separately installed `dev.dot-phone-call.backend` service is retained only for older installations.
 
-The helper refuses to take over an active BlackHole default route. Idle BlackHole defaults left after a headset disconnect recover to available built-in devices. Cleanup reads back the selected devices before removing its snapshot, and uses built-in audio when the saved device has disconnected. Physical devices and the signed-in Dot tab are still shared resources, so do not run simultaneous calls from both projects. Global Mac output routing can include audio from other applications. Dot-only output isolation is not part of this integration.
+The helper refuses to take over an active BlackHole default route. Idle BlackHole defaults left after a headset disconnect recover to available built-in devices. Cleanup reads back the selected devices before removing its snapshot, and uses built-in audio when the saved device has disconnected. Calls select BlackHole devices per tab and per page, so only Dot's audio reaches the phone and the Mac's speakers and microphone stay usable. If Dot connects but its playback cannot be routed, the call fails with `DOT_OUTPUT_NOT_ROUTED` instead of playing Dot on the speakers. The BlackHole devices and the signed-in Dot tab are still shared resources, so do not run simultaneous calls from both projects.
 
 A lost outgoing REST response is deliberately not retried. The journal retains the uncertain intent and blocks subsequent calls until the provider outcome is reconciled. This prevents a timeout from placing a duplicate call. Credentials and runtime call records remain local and ignored by Git.
 
@@ -87,7 +86,7 @@ Provider references: [Twilio Device registration and tokens](https://www.twilio.
 
 ## Hidden bridge diagnostic and fallback
 
-Build with `node scripts/build-mac-extension.mjs --enable-calling --backend=local --hidden-audio-test` to run one diagnostic after reloading the extension and granting microphone permission. Disable both backend calling flags during this test. It launches the native helper automatically and passes a 997 Hz tone through BlackHole 2ch, the real browser audio session, local Opus WebRTC, PCM playback, and BlackHole 16ch. It checks the received tone, closes all test tracks and streams, and never invokes the phone API. The test uses a muted audio element to match Twilio's remote playback lifecycle and a duplex BlackHole recorder to avoid conflicting CoreAudio streams. This verifies local audio transport; it does not prove a live telephone call or Dot response.
+Build with `node scripts/build-mac-extension.mjs --enable-calling --backend=local --hidden-audio-test` to run one diagnostic after reloading the extension and granting microphone permission. Disable both backend calling flags during this test. It launches the native helper automatically and passes a 997 Hz tone through BlackHole 2ch, the real browser audio session and voice shaping, local Opus WebRTC, and the hidden page's own playback to BlackHole 16ch, where the helper records it. It checks the received tone, closes all test tracks and streams, and never invokes the phone API. The test uses a muted audio element to match Twilio's remote playback lifecycle. This verifies local audio transport; it does not prove a live telephone call or Dot response.
 
 The packaged page contains the Twilio SDK and audio code. Its HTTP and WebSocket access requires the paired extension origin and existing local capabilities. The local backend reports `browser_context: offscreen` and microphone readiness. Registration stays active while idle with no microphone track open.
 

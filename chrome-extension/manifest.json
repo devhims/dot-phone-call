@@ -44,6 +44,6 @@
   },
   "options_page": "setup.html",
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'; connect-src 'self' http://127.0.0.1:8894 ws://127.0.0.1:8893 https://*.twilio.com wss://*.twilio.com https://*.twiliocdn.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'; connect-src 'self' http://127.0.0.1:8894 https://*.twilio.com wss://*.twilio.com https://*.twiliocdn.com;"
   }
 }

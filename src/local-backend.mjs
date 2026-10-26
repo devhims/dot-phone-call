@@ -42,7 +42,7 @@ export function createLocalBackend({queue,mcpToken,companionToken,extensionId,pu
       const path=req.url;
       if(registered&&path.startsWith('/bridge/')) {
         if(req.method==='GET') {
-          const assets={'/bridge/':'../browser/index.html','/bridge/app.js':'../browser/app.js','/bridge/session.js':'../browser/session.js','/bridge/diagnostic.js':'../browser/diagnostic.js','/bridge/phone-voice.js':'../browser/phone-voice.js','/bridge/phone-voice-worklet.js':'../browser/phone-voice-worklet.js','/bridge/pcm-worklet.js':'../prototype/registered/pcm-worklet.js','/bridge/twilio.min.js':'../node_modules/@twilio/voice-sdk/dist/twilio.min.js'};
+          const assets={'/bridge/':'../browser/index.html','/bridge/app.js':'../browser/app.js','/bridge/session.js':'../browser/session.js','/bridge/diagnostic.js':'../browser/diagnostic.js','/bridge/phone-voice.js':'../browser/phone-voice.js','/bridge/phone-voice-worklet.js':'../browser/phone-voice-worklet.js','/bridge/twilio.min.js':'../node_modules/@twilio/voice-sdk/dist/twilio.min.js'};
           if(!assets[path])return send(res,404,{error:'Not found'});
           const data=await readFile(new URL(assets[path],import.meta.url));
           res.writeHead(200,{'Content-Type':path.endsWith('.js')?'text/javascript':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"frame-ancestors 'none'; object-src 'none'; base-uri 'none'"});res.end(data);return;

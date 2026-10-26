@@ -141,3 +141,24 @@ test('without the output option, Dot playback devices are never changed',async()
   assert.deepEqual(f.sinks,[]);
   assert.equal(f.route.status('job').output,undefined);
 });
+
+test('contexts closed by earlier Dot sessions are skipped instead of failing the next call',async()=>{
+  const f=outputFixture();
+  // Chrome rejects setSinkId on a closed context with InvalidStateError.
+  const rejectClosed=Context=>class extends Context {
+    async setSinkId(id){if(this.state==='closed'){const error=new Error('closed');error.name='InvalidStateError';throw error;}return super.setSinkId(id);}};
+  f.context.AudioContext=rejectClosed(f.context.AudioContext);
+  const previous=new f.context.AudioContext();previous.state='closed';
+  const current=new f.context.AudioContext();current.state='running';
+  await f.route.arm('job',Date.now()+60000,{output:'blackhole-2ch'});await tick();
+  const status=f.route.status('job');
+  assert.deepEqual([...status.output.errors],[]);
+  assert.equal(status.output_verified,true);
+  assert.equal(current.sinkId,'bh2');assert.equal(previous.sinkId,'');
+  f.route.disarm('job');
+  // A second call in the same tab, after this session's context also closed.
+  current.state='closed';const next=new f.context.AudioContext();next.state='running';
+  await f.route.arm('job2',Date.now()+60000,{output:'blackhole-2ch'});await tick();
+  assert.deepEqual([...f.route.status('job2').output.errors],[]);
+  assert.equal(next.sinkId,'bh2');
+});

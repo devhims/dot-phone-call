@@ -67,7 +67,7 @@ async function startHelper(mode, job) {
           }
         })();
       });
-      port.postMessage({type:'run',mode,instance,backend_origin:DOT_PHONE_CONFIG.origin,...(DOT_PHONE_CONFIG.directAudio?{direct_audio:true}:{}),...(job?{job}:{})});
+      port.postMessage({type:'run',mode,instance,backend_origin:DOT_PHONE_CONFIG.origin,...(job?{job}:{})});
     });
   } catch(error) {
     recoveryRequired=true;

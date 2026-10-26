@@ -49,11 +49,10 @@ async function step() {
       if(job&&state.job?.id!==job.id)await cleanup(false);
       if(state.release_job&&!job)await post('released',{job_id:state.release_job});
       job=state.job;
-      if(job?.audio_capability&&!session&&!preparing){
+      if(job?.prepared&&!session&&!preparing){
         preparing=true;
         try {
-          lastFailure=null;session=new AudioSession({capability:job.audio_capability,direct:job.direct_audio===true});await session.prepare();
-          session.socket.onclose=()=>{if(!closing)void cleanup();};
+          lastFailure=null;session=new AudioSession();await session.prepare();
           await post('ready',{job_id:job.id});endButton.disabled=false;
         }finally{preparing=false;}
       }
@@ -119,7 +118,7 @@ if(extensionBridge)chrome.runtime.onMessage.addListener((message,sender,reply)=>
   if(message.action==='audio-test'&&!sender.tab){
     if(job||session||diagnosing){reply({error:'AUDIO_ROUTE_ALREADY_IN_USE'});return;}
     diagnosing=true;
-    void testHiddenAudio(message.capability,message.direct===true).then(reply,error=>reply({error:/^[A-Z_]{1,60}$/.test(error.message)?error.message:'OFFSCREEN_AUDIO_FAILED'})).finally(()=>{diagnosing=false;});
+    void testHiddenAudio().then(reply,error=>reply({error:/^[A-Z_]{1,60}$/.test(error.message)?error.message:'OFFSCREEN_AUDIO_FAILED'})).finally(()=>{diagnosing=false;});
     return true;
   }
 });

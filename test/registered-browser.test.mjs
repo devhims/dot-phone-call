@@ -27,7 +27,7 @@ test('startup registers without user clicks or microphone capture and renews its
 test('incoming is verified before capture or acceptance, then releases tracks before reporting hangup',async()=>{
   const f=await fixture(),call=f.incoming();f.handlers.incoming(call);await flush();await flush();
   assert.equal(f.sessions.length,0);assert.ok(!f.events.includes('accepted'));
-  f.setState({job:{id:'job',audio_capability:'capability',child_sid:'child'}});await f.run('step()');
+  f.setState({job:{id:'job',prepared:true,child_sid:'child'}});await f.run('step()');
   assert.ok(f.events.indexOf('incoming')<f.events.indexOf('prepare'));
   assert.ok(f.events.indexOf('ready')<f.events.indexOf('accepted'));
   call.callbacks.accept();await flush();assert.ok(f.events.includes('connected'));
@@ -38,7 +38,7 @@ test('rejected incoming calls never open audio or answer',async()=>{
   assert.equal(f.sessions.length,0);assert.ok(f.events.includes('rejected'));assert.ok(!f.events.includes('accepted'));
 });
 test('backend cancellation and restart release requests close browser audio',async()=>{
-  const f=await fixture();f.setState({job:{id:'job',audio_capability:'capability'}});await f.run('step()');
+  const f=await fixture();f.setState({job:{id:'job',prepared:true}});await f.run('step()');
   f.setState({job:null,release_job:'job'});await f.run('step()');
   assert.equal(f.sessions[0].closed,true);assert.ok(f.events.includes('released'));
 });
@@ -49,7 +49,7 @@ test('rotated backend session reloads the document instead of keeping stale cred
 
 test('audio startup failures remain visible and are reported before cleanup',async()=>{
   const f=await fixture({prepareError:'MICROPHONE_PERMISSION_REQUIRED'});
-  f.setState({job:{id:'job',audio_capability:'capability'}});await f.run('step()');
+  f.setState({job:{id:'job',prepared:true}});await f.run('step()');
   assert.ok(f.events.includes('MICROPHONE_PERMISSION_REQUIRED'));
   assert.ok(f.events.indexOf('failed')<f.events.indexOf('ended'));
   f.setState({job:null});await f.run('step()');

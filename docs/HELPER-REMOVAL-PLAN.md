@@ -1,7 +1,7 @@
 # Plan: remove the native audio helper
 
-Status: proposal, 26 October 2026. Builds on the `experiment/direct-audio-routing`
-branch (commit `74115c2`).
+Status: Phase 1 implemented on `experiment/direct-audio-routing`, 26 October 2026.
+Phases 2 to 4 are proposed.
 
 ## Why this is possible now
 

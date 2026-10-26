@@ -79,3 +79,15 @@ Phone-to-Dot playout uses the bridge's `SampleQueue`: three 20 ms chunks of preb
 
 The hidden-page diagnostic's tone bound is now 0.015-0.45 RMS, because the shaping levels its -27 dBFS tone to about -13 dBFS. 105 JavaScript and 127 native-helper tests passed, plus the setup, supervisor and tunnel suites. No phone was dialed. The browser changes take effect after rebuilding and reloading the extension. A first live call before the rebuild still used the flat gain; after rebuilding and reloading, the owner confirmed on 2026-10-25 that a live call sounded good.
 
+## Per-tab audio routing (helper removal, Phase 1)
+
+Calls no longer change the Mac's default audio devices. During an armed call, the extension's document-start script routes Dot's audio elements and audio contexts to BlackHole 2ch with `setSinkId`, and restores them afterwards. The hidden Twilio page plays phone audio to BlackHole 16ch through its own `AudioContext` sink. The PCM worklet, the `127.0.0.1:8893` audio socket, the helper's playout and its jitter buffer, and the helper's route switching are removed. The helper only sequences calls.
+
+If Dot connects but no player is routed within 12 seconds, or a player refuses BlackHole 2ch, the call fails with `DOT_OUTPUT_NOT_ROUTED`. Routing errors during a call end it the same way, rather than letting Dot play on the speakers.
+
+Evidence before this change: a scratch Chrome profile routed WebRTC streams per element and per context with no leakage between BlackHole devices; the real extension's hidden page recovered 997 Hz on BlackHole 16ch with no helper PCM; and a live call worked in both directions with the Mac's speakers unchanged. On that call Dot used two audio elements and one audio context, and chatgpt.com accepted every routing request. 111 JavaScript, 123 native-helper and 14 setup tests pass.
+
+Live check on this build: an outgoing call worked in both directions with Dot's output routed (2 elements, 1 context). The next two calls, both incoming, were hung up as Dot answered, with `DOT_OUTPUT_NOT_ROUTED` and `contexts:InvalidStateError`. Dot closes its audio context after each voice session, and the hook still tracked the closed ones from earlier calls in the same tab; Chrome rejects changing a closed context's output. Closed contexts are now skipped and pruned. A regression test fails on the previous hook and passes with the fix. The hook version moved to 0.1.9 so an open Dot tab reloads into the fix while idle.
+
+After the fix and an extension reload: two incoming attempts made immediately after the reload were dropped right after the PIN. Twilio reported the browser leg as no-answer in 0 seconds and the backend never saw them, consistent with the hidden page still re-registering. The next incoming call connected and completed with Dot's output routed. A further call in the same Dot tab, without refreshing it, saw two audio contexts (one closed from the previous call), routed the live one with no errors, and completed with both directions audible. After reloading the extension, wait for **Ready for calls** before calling.
+

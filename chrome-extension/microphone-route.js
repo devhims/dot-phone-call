@@ -1,7 +1,7 @@
 // Runs in the page's MAIN world before Dot can cache getUserMedia. No pairing
 // credentials or audio samples cross this interface. Unowned calls pass through.
 (() => {
-  if (globalThis.dotPhoneMicrophone?.version === '0.1.8') return;
+  if (globalThis.dotPhoneMicrophone?.version === '0.1.9') return;
   const media = navigator.mediaDevices;
   if (!media?.getUserMedia) return;
   const original = media.getUserMedia;
@@ -46,15 +46,19 @@
   const players = new Set(), contexts = new Set();
   const output = {seen_elements:0, seen_contexts:0, routed_elements:0, routed_contexts:0, errors:[]};
   const live = refs => [...refs].map(ref => ref.deref()).filter(Boolean);
+  // Dot closes a context after each voice session; closed contexts cannot play
+  // and Chrome rejects changing their output, so they are skipped, not errors.
+  const closed = target => target.state === 'closed';
   async function route(target, kind) {
     const value = session;
-    if (!value?.outputId || value.routed.has(target)) return;
+    if (!value?.outputId || value.routed.has(target) || closed(target)) return;
     value.routed.add(target);
     try {
       await target.setSinkId(value.outputId);
       if (session === value) output['routed_' + kind] += 1;
     } catch (error) {
       value.routed.delete(target);
+      if (closed(target)) return;  // Closed while routing.
       if (output.errors.length < 8) output.errors.push(kind + ':' + (error?.name || 'Error'));
     }
   }
@@ -88,7 +92,11 @@
   async function routeExisting() {
     for (const element of live(players)) await route(element, 'elements');
     for (const element of globalThis.document?.querySelectorAll?.('audio,video') ?? []) trackPlayer(element);
-    for (const context of live(contexts)) await route(context, 'contexts');
+    for (const ref of [...contexts]) {
+      const context = ref.deref();
+      if (!context || closed(context)) contexts.delete(ref);
+      else await route(context, 'contexts');
+    }
   }
   async function restoreOutput(value) {
     for (const target of value.routed ?? []) {
@@ -97,7 +105,7 @@
     value.routed?.clear();
   }
   globalThis.dotPhoneMicrophone = {
-    version:'0.1.8',
+    version:'0.1.9',
     async arm(jobId, deadline, options = {}) {
       if (session) {
         if (session.jobId !== jobId) throw new Error('DOT_MICROPHONE_ALREADY_OWNED');

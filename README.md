@@ -218,7 +218,8 @@ Finish any call, then:
 | Chrome disconnected | Load the extension in the correct profile and inspect its Errors page. Reload it after rebuilding. |
 | `AUDIO_ROUTE_ALREADY_IN_USE` | An active BlackHole device is protected from takeover. Idle BlackHole defaults left after a headset disconnect now recover to built-in audio automatically; close the application using BlackHole if the device is genuinely active. |
 | Audio diagnostic fails | Inspect `.runtime/native-helper-result.json` and `.runtime/native-helper.log`. Keep calling disabled until it passes. |
-| Unexpected music/background audio | Pause other audio applications. Current BlackHole routing can capture other system audio during a call. |
+| Unexpected music/background audio | Calls route only Dot's tab and the hidden Twilio page to BlackHole. Check that no other app is set to output to BlackHole 2ch. |
+| `DOT_OUTPUT_NOT_ROUTED` | Dot connected but its playback could not be sent to BlackHole 2ch. Reload the Dot tab and the extension, then retry. If it persists, Dot's page may have changed how it plays audio. |
 | Dot controls unavailable | Confirm Dot voice works manually in Chrome. This integration depends on Dot's browser UI and may need updates when it changes. |
 | Phone does not ring | Check Dot's call status, saved number format, Twilio account restrictions, and calling flags. A queued request is not a confirmed call. |
 

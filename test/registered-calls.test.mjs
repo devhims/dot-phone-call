@@ -155,3 +155,12 @@ test('only the paired hidden extension can use authenticated bridge requests',as
  assert.equal((await post(origin,'wrong')).status,403);
  assert.equal((await post('https://evil.example')).status,403);
 });
+
+test('the hidden page learns a call is prepared without any audio capability',async t=>{
+  const f=await fixture(t),job=f.start();
+  assert.equal((await f.browser('pulse',{registered:true})).job,null);
+  await f.helper('prepare',job);
+  const pulsed=(await f.browser('pulse',{registered:true})).job;
+  assert.equal(pulsed.id,job.id);assert.equal(pulsed.prepared,true);
+  assert.equal('audio_capability' in pulsed,false);
+});

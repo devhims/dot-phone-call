@@ -66,15 +66,17 @@ async function refreshDotTabs() {
     await refreshTabIfNeeded(tab.id).catch(()=>{});
   }
 }
-// pairing.js declares a top-level const, which is not a globalThis property.
-const directAudio = () => typeof DOT_PHONE_CONFIG !== 'undefined' && DOT_PHONE_CONFIG.directAudio === true;
+// Dot's playback goes to BlackHole 2ch per tab; the Mac's default output is never changed.
+const DOT_OUTPUT = {output:'blackhole-2ch'};
+// Dot may create its players only once voice connects. Tests shorten this wait.
+const outputRouteTimeout = () => globalThis.DOT_OUTPUT_ROUTE_TIMEOUT_MS ?? 12000;
 async function owned() { return (await chrome.storage.local.get('owned')).owned; }
 async function microphone(tabId, action, jobId, deadline, options) {
   const results = await bounded(chrome.scripting.executeScript({
     target:{tabId}, world:'MAIN',
     func:async (action, jobId, deadline, options) => {
       const route = globalThis.dotPhoneMicrophone;
-      if (!route || route.version !== '0.1.8') {
+      if (!route || route.version !== '0.1.9') {
         return action === 'disarm' ? {released:true} : {error:'DOT_MICROPHONE_RELOAD_REQUIRED'};
       }
       try {return await route[action](jobId, deadline, options);}
@@ -127,7 +129,7 @@ async function endOwned(jobId) {
 }
 async function command(message) {
   if(message.action==='hidden_audio_test'){
-    const result=await bounded(chrome.runtime.sendMessage({target:'dot-phone-offscreen',action:'audio-test',capability:message.audio_capability,direct:message.direct===true}),15000);
+    const result=await bounded(chrome.runtime.sendMessage({target:'dot-phone-offscreen',action:'audio-test'}),15000);
     if(!result)throw Error('OFFSCREEN_NOT_READY');
     return result;
   }
@@ -172,7 +174,7 @@ async function command(message) {
     // The MAIN-world hook must have loaded before Dot cached getUserMedia.
     // A newly upgraded extension needs one Dot page reload; do not silently
     // inject late and assume that changing the OS default changed Chrome.
-    await microphone(tab.id,'arm',message.job_id,leaseDeadline,directAudio()?{output:'blackhole-2ch'}:null);
+    await microphone(tab.id,'arm',message.job_id,leaseDeadline,DOT_OUTPUT);
     if(canceled.has(message.job_id)) {
       await microphone(tab.id,'disarm',message.job_id);
       return {error:'CALL_CANCELED'};
@@ -187,7 +189,17 @@ async function command(message) {
       if(result.active) sawActive = true;
       const audio = await microphone(tab.id,'status',message.job_id);
       if(result.connected && audio.microphone_verified) {
-        return {connected:true,tab_id:tab.id,version,...audio};
+        // Gate: Dot's voice must be routed to BlackHole 2ch, or it would play
+        // on the speakers and never reach the phone.
+        const routeDeadline=Date.now()+outputRouteTimeout();
+        let routed=audio;
+        while(!routed.output_verified && !routed.output?.errors?.length && Date.now()<routeDeadline) {
+          if(canceled.has(message.job_id)) return {error:'CALL_CANCELED'};
+          await sleep(250);
+          routed=await microphone(tab.id,'status',message.job_id);
+        }
+        if(!routed.output_verified) return {error:'DOT_OUTPUT_NOT_ROUTED',diagnostics:{output:routed.output??null}};
+        return {connected:true,tab_id:tab.id,version,...routed};
       }
       // Start call begins an asynchronous UI/network transition. Absence of
       // Hang up before it first appears is not evidence that voice ended.

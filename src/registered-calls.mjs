@@ -46,9 +46,8 @@ export class RegisteredCalls {
     if(action==='prepare') {
       if(!this.enabled||!this.registered()||this.recovering)fail('REGISTERED_CLIENT_UNAVAILABLE');
       if(this.record&&this.record.job!==job.id)fail('REGISTERED_CALL_BUSY');
-      if(!/^[a-zA-Z0-9_-]{32,100}$/.test(input.audio_capability??''))fail('INVALID_AUDIO_CAPABILITY');
       this.record??={job:job.id,direction:job.direction??'outbound',parent:job.inbound_call_sid??null,created:this.now()};
-      this.record.instance=input.instance;this.record.audio=input.audio_capability;this.record.direct=input.direct_audio===true;this.record.helperReady=true;this.record.helperAt=this.now();this.save();
+      this.record.instance=input.instance;this.record.helperReady=true;this.record.helperAt=this.now();this.save();
       return {ready:true};
     }
     if(!this.record||this.record.job!==job.id)fail('REGISTERED_CALL_MISSING');
@@ -114,7 +113,7 @@ export class RegisteredCalls {
       const r=this.record;
       let token;
       if(this.now()>(this.lease.tokenUntil??0)-120000){token=accessToken(this.config,this.now());this.lease.tokenUntil=this.now()+3600000;}
-      return {token,calling_enabled:this.enabled,release_job:r?.ended?r.job:null,job:r&&!r.ended&&!this.recovering?{id:r.job,direction:r.direction,audio_capability:r.audio??null,child_sid:r.child??null,direct_audio:r.direct===true}:null};
+      return {token,calling_enabled:this.enabled,release_job:r?.ended?r.job:null,job:r&&!r.ended&&!this.recovering?{id:r.job,direction:r.direction,prepared:!!r.helperReady,child_sid:r.child??null}:null};
     }
     if(action==='incoming')return this.incoming(input);
     const r=this.record;

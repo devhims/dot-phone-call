@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 
 const source=readFileSync(new URL('../chrome-extension/background.js',import.meta.url),'utf8');
-function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false, activeInitially=false, draft=false, newTabLoading=false, config=''}={}) {
+function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false, activeInitially=false, draft=false, newTabLoading=false, outputRouted=true, outputErrors=[]}={}) {
   const events=[], values={};
   const tabs=[{id:1,windowId:9,url:'https://chatgpt.com/dots/home',active:false,lastAccessed:1},
     {id:2,windowId:9,url:'https://chatgpt.com/dots/home',active:true,lastAccessed:2}];
@@ -38,16 +38,18 @@ function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false,
         if(action==='arm')events.push(['arm_options',options.args[3]]);
         if(!hookPresent) return [{result:{error:'DOT_MICROPHONE_RELOAD_REQUIRED'}}];
         return [{result:action==='status'
-          ? {microphone_verified:microphoneVerified,...(!microphoneVerified?{error:'DOT_MICROPHONE_DEVICE_MISMATCH'}:{})}
+          ? {microphone_verified:microphoneVerified,...(!microphoneVerified?{error:'DOT_MICROPHONE_DEVICE_MISMATCH'}:{}),
+              output:{device:'BlackHole 2ch',routed_elements:outputRouted?2:0,routed_contexts:outputRouted?1:0,errors:outputErrors},
+              output_verified:outputRouted&&!outputErrors.length}
           : {armed:true,released:true}}];
       }
       installed=true;events.push(['inject',options.target.tabId]);
     }},
   };
-  const context=vm.createContext({chrome,importScripts:noop,DOT_PHONE_INITIAL_TAB_ID:1,
+  const context=vm.createContext({chrome,importScripts:noop,DOT_PHONE_INITIAL_TAB_ID:1,DOT_OUTPUT_ROUTE_TIMEOUT_MS:300,
     WebSocket:class {static OPEN=1;static CONNECTING=0;readyState=0;},
     setTimeout,clearTimeout,setInterval,clearInterval,Date});
-  vm.runInContext(config+source,context);
+  vm.runInContext(source,context);
   return {events,values,run:expression=>vm.runInContext(expression,context),refresh:()=>vm.runInContext('refreshDotTabs()',context),invoke:message=>{context.message=message;return vm.runInContext('command(message)',context);}};
 }
 test('prepare chooses the active Dot tab and activates it before inspecting',async()=>{
@@ -125,12 +127,30 @@ test('browser API failures return useful codes without exposing raw URLs',()=>{
  assert.equal(f.run("browserErrorCode(new Error('Receiving end does not exist.'))"),'DOT_CONTROLS_UNAVAILABLE');
 });
 
-test('direct-audio builds ask Dot to route its output; normal builds do not',async()=>{
-  // Matches pairing.js: a top-level const, not a globalThis property.
-  for(const [config,expected] of [["const DOT_PHONE_CONFIG={directAudio:true};\n",{output:'blackhole-2ch'}],["const DOT_PHONE_CONFIG={directAudio:false};\n",null],['',null]]){
-    const f=fixture({config});
-    await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
-    assert.equal(JSON.stringify(f.events.find(e=>e[0]==='arm_options')?.[1]),JSON.stringify(expected));
-  }
+test('Dot is always armed to route its output to BlackHole 2ch',async()=>{
+  const f=fixture();
+  await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
+  assert.equal(JSON.stringify(f.events.find(e=>e[0]==='arm_options')?.[1]),JSON.stringify({output:'blackhole-2ch'}));
 });
 
+test('a connected Dot whose output is not routed is refused instead of reported connected',async()=>{
+  const f=fixture({outputRouted:false});
+  const result=await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
+  assert.equal(result.error,'DOT_OUTPUT_NOT_ROUTED');
+  assert.equal(result.connected,undefined);
+});
+
+test('a Dot player that refuses BlackHole fails immediately',async()=>{
+  const f=fixture({outputRouted:true,outputErrors:['elements:NotAllowedError']});
+  const started=Date.now();
+  const result=await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
+  assert.equal(result.error,'DOT_OUTPUT_NOT_ROUTED');
+  assert.ok(Date.now()-started<1000);
+});
+
+test('routed output lets the call report connected with its routing report',async()=>{
+  const f=fixture();
+  const result=await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
+  assert.equal(result.connected,true);assert.equal(result.output_verified,true);
+  assert.equal(result.output.routed_elements,2);
+});
