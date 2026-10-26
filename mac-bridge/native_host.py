@@ -79,6 +79,8 @@ async def run_operation(config, request, reader, send):
         config = {**config, 'origin': request['backend_origin']}
     companion = Companion(config)
     companion.instance = request['instance']
+    # Experiment: per-tab/per-page audio routing instead of system default devices.
+    companion.direct_audio = request.get('direct_audio') is True
     companion.browser = NativeBrowser(send)
     companion.cleanup_failed = SNAPSHOT.exists()
     loop = asyncio.get_running_loop()

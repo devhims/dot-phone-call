@@ -32,7 +32,8 @@ async def test_offscreen_audio(companion):
             samplerate=48000,blocksize=960,dtype='float32',callback=tone)
         pipe.outputs.append(fixture);fixture.start()
         await runner.setup();await web.TCPSite(runner,'127.0.0.1',8893).start()
-        browser=await companion.command('hidden_audio_test',audio_capability=pipe.audio_capability)
+        direct=getattr(companion,'direct_audio',False)
+        browser=await companion.command('hidden_audio_test',audio_capability=pipe.audio_capability,direct=direct)
         if not browser.get('verified'):raise RuntimeError('OFFSCREEN_AUDIO_FAILED')
         data=np.concatenate(captured) if captured else np.empty(0)
         # Exclude startup silence; require sustained received tone, not one impulse.
@@ -41,7 +42,8 @@ async def test_offscreen_audio(companion):
         print(__import__('json').dumps({'event':'offscreen_audio_metrics',**metrics}),flush=True)
         if not capture.active:
             return {'verified':False,'dialed':False,'code':'OFFSCREEN_RECORDER_STOPPED',**metrics}
-        if len(active)<48000 or pipe.audio_stats['received_frames']<48000:
+        # Direct mode plays from the page into BlackHole 16ch; no PCM reaches the helper.
+        if len(active)<48000 or (not direct and pipe.audio_stats['received_frames']<48000):
             return {'verified':False,'dialed':False,'code':'OFFSCREEN_AUDIO_SILENT',**metrics}
         start=np.flatnonzero(np.abs(data)>.001)[0]
         signal=data[start:]

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 
 const source=readFileSync(new URL('../chrome-extension/background.js',import.meta.url),'utf8');
-function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false, activeInitially=false, draft=false, newTabLoading=false}={}) {
+function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false, activeInitially=false, draft=false, newTabLoading=false, config=''}={}) {
   const events=[], values={};
   const tabs=[{id:1,windowId:9,url:'https://chatgpt.com/dots/home',active:false,lastAccessed:1},
     {id:2,windowId:9,url:'https://chatgpt.com/dots/home',active:true,lastAccessed:2}];
@@ -35,6 +35,7 @@ function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false,
       if(tabs.find(t=>t.id===options.target.tabId)?.status==='loading')throw Error('Cannot access contents of url about:blank. Extension manifest must request permission.');
       if(options.world==='MAIN') {
         const action=options.args[0];events.push(['microphone',action]);
+        if(action==='arm')events.push(['arm_options',options.args[3]]);
         if(!hookPresent) return [{result:{error:'DOT_MICROPHONE_RELOAD_REQUIRED'}}];
         return [{result:action==='status'
           ? {microphone_verified:microphoneVerified,...(!microphoneVerified?{error:'DOT_MICROPHONE_DEVICE_MISMATCH'}:{})}
@@ -46,7 +47,7 @@ function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false,
   const context=vm.createContext({chrome,importScripts:noop,DOT_PHONE_INITIAL_TAB_ID:1,
     WebSocket:class {static OPEN=1;static CONNECTING=0;readyState=0;},
     setTimeout,clearTimeout,setInterval,clearInterval,Date});
-  vm.runInContext(source,context);
+  vm.runInContext(config+source,context);
   return {events,values,run:expression=>vm.runInContext(expression,context),refresh:()=>vm.runInContext('refreshDotTabs()',context),invoke:message=>{context.message=message;return vm.runInContext('command(message)',context);}};
 }
 test('prepare chooses the active Dot tab and activates it before inspecting',async()=>{
@@ -123,3 +124,13 @@ test('browser API failures return useful codes without exposing raw URLs',()=>{
  assert.equal(f.run("browserErrorCode(new Error('Cannot access contents of url https://private.example'))"),'DOT_TAB_ACCESS_DENIED');
  assert.equal(f.run("browserErrorCode(new Error('Receiving end does not exist.'))"),'DOT_CONTROLS_UNAVAILABLE');
 });
+
+test('direct-audio builds ask Dot to route its output; normal builds do not',async()=>{
+  // Matches pairing.js: a top-level const, not a globalThis property.
+  for(const [config,expected] of [["const DOT_PHONE_CONFIG={directAudio:true};\n",{output:'blackhole-2ch'}],["const DOT_PHONE_CONFIG={directAudio:false};\n",null],['',null]]){
+    const f=fixture({config});
+    await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
+    assert.equal(JSON.stringify(f.events.find(e=>e[0]==='arm_options')?.[1]),JSON.stringify(expected));
+  }
+});
+

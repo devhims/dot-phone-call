@@ -1,7 +1,7 @@
 // Runs in the page's MAIN world before Dot can cache getUserMedia. No pairing
 // credentials or audio samples cross this interface. Unowned calls pass through.
 (() => {
-  if (globalThis.dotPhoneMicrophone?.version === '0.1.7') return;
+  if (globalThis.dotPhoneMicrophone?.version === '0.1.8') return;
   const media = navigator.mediaDevices;
   if (!media?.getUserMedia) return;
   const original = media.getUserMedia;
@@ -40,9 +40,65 @@
     }
   };
   media.getUserMedia = wrapped;
+
+  // Experiment: route Dot's playback to BlackHole 2ch for an armed call only,
+  // instead of switching the Mac's default output. Records how Dot plays audio.
+  const players = new Set(), contexts = new Set();
+  const output = {seen_elements:0, seen_contexts:0, routed_elements:0, routed_contexts:0, errors:[]};
+  const live = refs => [...refs].map(ref => ref.deref()).filter(Boolean);
+  async function route(target, kind) {
+    const value = session;
+    if (!value?.outputId || value.routed.has(target)) return;
+    value.routed.add(target);
+    try {
+      await target.setSinkId(value.outputId);
+      if (session === value) output['routed_' + kind] += 1;
+    } catch (error) {
+      value.routed.delete(target);
+      if (output.errors.length < 8) output.errors.push(kind + ':' + (error?.name || 'Error'));
+    }
+  }
+  function trackPlayer(element) {
+    if (!element || players.has(element.__dotPhoneRef)) return;
+    element.__dotPhoneRef = new WeakRef(element);
+    players.add(element.__dotPhoneRef);
+    output.seen_elements += 1;
+    void route(element, 'elements');
+  }
+  if (typeof HTMLMediaElement !== 'undefined' && HTMLMediaElement.prototype.setSinkId) {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function(...args) {trackPlayer(this); return play.apply(this, args);};
+    const source = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
+    if (source?.set) Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {...source,
+      set(value) {source.set.call(this, value); if (value) trackPlayer(this);}});
+    globalThis.addEventListener?.('play', event => trackPlayer(event.target), true);
+  }
+  for (const name of ['AudioContext', 'webkitAudioContext']) {
+    const Original = globalThis[name];
+    if (typeof Original !== 'function' || !Original.prototype.setSinkId) continue;
+    globalThis[name] = class extends Original {
+      constructor(...args) {
+        super(...args);
+        contexts.add(new WeakRef(this));
+        output.seen_contexts += 1;
+        void route(this, 'contexts');
+      }
+    };
+  }
+  async function routeExisting() {
+    for (const element of live(players)) await route(element, 'elements');
+    for (const element of globalThis.document?.querySelectorAll?.('audio,video') ?? []) trackPlayer(element);
+    for (const context of live(contexts)) await route(context, 'contexts');
+  }
+  async function restoreOutput(value) {
+    for (const target of value.routed ?? []) {
+      try {await target.setSinkId('');} catch {}
+    }
+    value.routed?.clear();
+  }
   globalThis.dotPhoneMicrophone = {
-    version:'0.1.7',
-    async arm(jobId, deadline) {
+    version:'0.1.8',
+    async arm(jobId, deadline, options = {}) {
       if (session) {
         if (session.jobId !== jobId) throw new Error('DOT_MICROPHONE_ALREADY_OWNED');
         return this.status(jobId);
@@ -67,10 +123,18 @@
       }
       // Recheck after the asynchronous device lookup.
       if (session) throw new Error('DOT_MICROPHONE_ALREADY_OWNED');
-      const value = {jobId, deadline, deviceId:device.deviceId, label:device.label, tracks:new Set(), error:null};
+      const value = {jobId, deadline, deviceId:device.deviceId, label:device.label, tracks:new Set(), error:null, routed:new Set()};
+      if (options?.output === 'blackhole-2ch') {
+        const speaker = devices.find(d => d.kind === 'audiooutput' && /^BlackHole\s+2ch(?:\s+\([^)]*\))?$/i.test(d.label.trim()));
+        if (!speaker?.deviceId) throw new Error('BLACKHOLE_OUTPUT_NOT_FOUND');
+        value.outputId = speaker.deviceId;
+        output.routed_elements = output.routed_contexts = 0;
+        output.errors.length = 0;
+      }
       session = value;
+      if (value.outputId) await routeExisting();
       value.timer = setTimeout(() => {
-        if (session === value) {value.error = 'DOT_MICROPHONE_LEASE_EXPIRED'; stop(value);}
+        if (session === value) {value.error = 'DOT_MICROPHONE_LEASE_EXPIRED'; stop(value); void restoreOutput(value);}
       }, Math.max(0, deadline - Date.now()));
       return this.status(jobId);
     },
@@ -81,6 +145,8 @@
         || (media.getUserMedia !== wrapped ? 'DOT_MICROPHONE_HOOK_REPLACED' : null);
       return {armed:true, microphone:value.label,
         microphone_verified:!error && [...value.tracks].some(track => valid(track, value)),
+        ...(value.outputId ? {output:{device:'BlackHole 2ch', ...output, errors:[...output.errors]},
+          output_verified:output.routed_elements + output.routed_contexts > 0 && !output.errors.length} : {}),
         ...(error ? {error} : {})};
     },
     suspend(jobId) {
@@ -90,13 +156,14 @@
         session.error = 'CALL_CANCELED';
         session.deadline = 0;
         stop(session);
+        void restoreOutput(session);
       }
       return {suspended:true};
     },
     disarm(jobId) {
       if (session && session.jobId !== jobId) throw new Error('DOT_MICROPHONE_OWNER_MISMATCH');
       generation++;
-      if (session) {clearTimeout(session.timer); stop(session); session = null;}
+      if (session) {clearTimeout(session.timer); stop(session); void restoreOutput(session); session = null;}
       return {released:true};
     },
   };

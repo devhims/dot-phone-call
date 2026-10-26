@@ -69,6 +69,7 @@ async def run_registered_call(companion, job):
     state = SimpleNamespace(done=pipe.done, closed=False)
     companion.bridge_state = state
     code, started = None, False
+    last_output = None
     try:
         if SNAPSHOT.exists(): raise RuntimeError('PREVIOUS_AUDIO_RESTORE_REQUIRED')
         # Never take over another project's shared BlackHole audio routing.
@@ -85,11 +86,17 @@ async def run_registered_call(companion, job):
             await companion.route('recover-idle')
         prepared = await companion.command('prepare')
         await verify_local_audio()
-        await companion.route('enable')
-        pipe.start_native_audio(fixture=False)
+        direct = getattr(companion, 'direct_audio', False)
+        if direct:
+            # Experiment: Dot's tab and the hidden page select BlackHole devices
+            # themselves, so the Mac's default devices stay untouched.
+            print(json.dumps({'event':'direct_audio_experiment','system_route_changed':False}),flush=True)
+        else:
+            await companion.route('enable')
+            pipe.start_native_audio(fixture=False)
         await runner.setup()
         await web.TCPSite(runner, '127.0.0.1', 8893).start()
-        await companion.cloud('registered-prepare', {'call_id':job['id'],'audio_capability':pipe.audio_capability})
+        await companion.cloud('registered-prepare', {'call_id':job['id'],'audio_capability':pipe.audio_capability,'direct_audio':direct})
         deadline = asyncio.get_running_loop().time() + 85
         while not pipe.done.is_set():
             status = await companion.cloud('registered-state', {'call_id':job['id']})
@@ -102,6 +109,7 @@ async def run_registered_call(companion, job):
                 companion.report('connected')
             if started:
                 inspected = await companion.command('inspect_owned',job_id=job['id'])
+                if inspected.get('output') is not None: last_output = {**inspected['output'], 'verified': inspected.get('output_verified')}
                 if not inspected.get('active') or not inspected.get('microphone_verified'): break
             if asyncio.get_running_loop().time()>deadline: raise RuntimeError('REGISTERED_CALL_TIMEOUT')
             await asyncio.sleep(1)
@@ -128,6 +136,8 @@ async def run_registered_call(companion, job):
             companion.cleanup_failed = True
         # Phone-to-Dot playout health: no audio content, only counters.
         print(json.dumps({'event':'registered_audio_closed',**pipe.audio_metrics()}),flush=True)
+        if getattr(companion, 'direct_audio', False):
+            print(json.dumps({'event':'direct_audio_dot_output','report':last_output}),flush=True)
         try:
             result = await companion.command('end',job_id=job['id'])
             if not result.get('ended'): raise RuntimeError('DOT_HANGUP_NOT_CONFIRMED')

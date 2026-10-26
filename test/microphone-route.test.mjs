@@ -108,3 +108,36 @@ test('missing-device error reports BlackHole labels without exposing device IDs'
     return true;
   });
 });
+
+function outputFixture() {
+  const sinks=[];
+  class HTMLMediaElement {constructor(){this.sinkId='';} play(){return Promise.resolve();} async setSinkId(id){this.sinkId=id;sinks.push(['element',id]);}}
+  Object.defineProperty(HTMLMediaElement.prototype,'srcObject',{configurable:true,get(){return this._src;},set(v){this._src=v;}});
+  class AudioContext {constructor(){this.sinkId='';} async setSinkId(id){this.sinkId=id;sinks.push(['context',id]);}}
+  const track={enabled:true,readyState:'live',getSettings:()=>({deviceId:'blackhole'}),stop(){}};
+  const mediaDevices={enumerateDevices:async()=>[{kind:'audioinput',deviceId:'blackhole',label:'BlackHole 16ch'},
+    {kind:'audiooutput',deviceId:'bh2',label:'BlackHole 2ch'}],getUserMedia:async()=>({getTracks:()=>[track],getAudioTracks:()=>[track]})};
+  const context=vm.createContext({navigator:{mediaDevices},Date,setTimeout:()=>0,clearTimeout:()=>{},WeakRef,HTMLMediaElement,AudioContext});
+  vm.runInContext(readFileSync(new URL('../chrome-extension/microphone-route.js',import.meta.url),'utf8'),context);
+  return {route:context.dotPhoneMicrophone,context,sinks};
+}
+const tick=()=>new Promise(r=>setImmediate(r));
+test('armed output routing sends Dot playback to BlackHole 2ch and restores it on disarm',async()=>{
+  const f=outputFixture();
+  const early=new f.context.AudioContext();
+  await f.route.arm('job',Date.now()+60000,{output:'blackhole-2ch'});
+  const player=new f.context.HTMLMediaElement();player.srcObject={};await tick();
+  assert.equal(early.sinkId,'bh2');assert.equal(player.sinkId,'bh2');
+  const status=f.route.status('job');
+  assert.equal(status.output_verified,true);
+  assert.deepEqual([status.output.routed_elements,status.output.routed_contexts],[1,1]);
+  f.route.disarm('job');await tick();
+  assert.equal(early.sinkId,'');assert.equal(player.sinkId,'');
+});
+test('without the output option, Dot playback devices are never changed',async()=>{
+  const f=outputFixture();
+  await f.route.arm('job',Date.now()+60000);
+  const player=new f.context.HTMLMediaElement();await player.play();new f.context.AudioContext();await tick();
+  assert.deepEqual(f.sinks,[]);
+  assert.equal(f.route.status('job').output,undefined);
+});

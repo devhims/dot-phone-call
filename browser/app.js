@@ -52,7 +52,7 @@ async function step() {
       if(job?.audio_capability&&!session&&!preparing){
         preparing=true;
         try {
-          lastFailure=null;session=new AudioSession({capability:job.audio_capability});await session.prepare();
+          lastFailure=null;session=new AudioSession({capability:job.audio_capability,direct:job.direct_audio===true});await session.prepare();
           session.socket.onclose=()=>{if(!closing)void cleanup();};
           await post('ready',{job_id:job.id});endButton.disabled=false;
         }finally{preparing=false;}
@@ -119,7 +119,7 @@ if(extensionBridge)chrome.runtime.onMessage.addListener((message,sender,reply)=>
   if(message.action==='audio-test'&&!sender.tab){
     if(job||session||diagnosing){reply({error:'AUDIO_ROUTE_ALREADY_IN_USE'});return;}
     diagnosing=true;
-    void testHiddenAudio(message.capability).then(reply,error=>reply({error:/^[A-Z_]{1,60}$/.test(error.message)?error.message:'OFFSCREEN_AUDIO_FAILED'})).finally(()=>{diagnosing=false;});
+    void testHiddenAudio(message.capability,message.direct===true).then(reply,error=>reply({error:/^[A-Z_]{1,60}$/.test(error.message)?error.message:'OFFSCREEN_AUDIO_FAILED'})).finally(()=>{diagnosing=false;});
     return true;
   }
 });

@@ -66,20 +66,22 @@ async function refreshDotTabs() {
     await refreshTabIfNeeded(tab.id).catch(()=>{});
   }
 }
+// pairing.js declares a top-level const, which is not a globalThis property.
+const directAudio = () => typeof DOT_PHONE_CONFIG !== 'undefined' && DOT_PHONE_CONFIG.directAudio === true;
 async function owned() { return (await chrome.storage.local.get('owned')).owned; }
-async function microphone(tabId, action, jobId, deadline) {
+async function microphone(tabId, action, jobId, deadline, options) {
   const results = await bounded(chrome.scripting.executeScript({
     target:{tabId}, world:'MAIN',
-    func:async (action, jobId, deadline) => {
+    func:async (action, jobId, deadline, options) => {
       const route = globalThis.dotPhoneMicrophone;
-      if (!route || route.version !== '0.1.7') {
+      if (!route || route.version !== '0.1.8') {
         return action === 'disarm' ? {released:true} : {error:'DOT_MICROPHONE_RELOAD_REQUIRED'};
       }
-      try {return await route[action](jobId, deadline);}
+      try {return await route[action](jobId, deadline, options);}
       catch(error) {return {error:/^[A-Z_]{1,60}$/.test(error.message)
         ? error.message : 'DOT_MICROPHONE_SETUP_FAILED', diagnostics:error.diagnostics};}
     },
-    args:[action, jobId, deadline ?? null],
+    args:[action, jobId, deadline ?? null, options ?? null],
   }));
   const result = results?.[0]?.result;
   if (!result) throw new Error('DOT_MICROPHONE_CHECK_FAILED');
@@ -125,7 +127,7 @@ async function endOwned(jobId) {
 }
 async function command(message) {
   if(message.action==='hidden_audio_test'){
-    const result=await bounded(chrome.runtime.sendMessage({target:'dot-phone-offscreen',action:'audio-test',capability:message.audio_capability}),15000);
+    const result=await bounded(chrome.runtime.sendMessage({target:'dot-phone-offscreen',action:'audio-test',capability:message.audio_capability,direct:message.direct===true}),15000);
     if(!result)throw Error('OFFSCREEN_NOT_READY');
     return result;
   }
@@ -170,7 +172,7 @@ async function command(message) {
     // The MAIN-world hook must have loaded before Dot cached getUserMedia.
     // A newly upgraded extension needs one Dot page reload; do not silently
     // inject late and assume that changing the OS default changed Chrome.
-    await microphone(tab.id,'arm',message.job_id,leaseDeadline);
+    await microphone(tab.id,'arm',message.job_id,leaseDeadline,directAudio()?{output:'blackhole-2ch'}:null);
     if(canceled.has(message.job_id)) {
       await microphone(tab.id,'disarm',message.job_id);
       return {error:'CALL_CANCELED'};
