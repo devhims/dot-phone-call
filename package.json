@@ -20,5 +20,6 @@
   "description": "Local Dot phone calling source, queue, browser controls, and native audio bridge",
   "engines": {
     "node": ">=24"
-  }
+  },
+  "license": "MIT"
 }

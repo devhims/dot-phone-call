@@ -1,8 +1,10 @@
 # Local cutover, 25 October 2026
 
+> Historical record of the original developer installation's cutover. Later changes replaced the separate login services with the single menu-bar app and removed the native helper; see the [README](../README.md) and [architecture](ARCHITECTURE.md) for the current setup.
+
 Dot Phone Local now exposes all five calling tools through the Personal Secure MCP Tunnel. The existing Dot Phone hosted plugin remains installed as an explicit fallback. Use the local plugin by name to avoid ambiguity. Never retry an uncertain call through the other service automatically.
 
-The saved Twilio number now uses `https://handler.twilio.com/twiml/EH2c89dfa4e108955273943c91da6c429f`. This Twilio-hosted template collects six digits and routes to the new registered browser client. Caller-number and PIN authorization, queueing, and call control remain on the Mac. No Cloudflare endpoint is used by the primary incoming route.
+The saved Twilio number now uses the owner's TwiML Bin (account-specific URL omitted). This Twilio-hosted template collects six digits and routes to the new registered browser client. Caller-number and PIN authorization, queueing, and call control remain on the Mac. No Cloudflare endpoint is used by the primary incoming route.
 
 The backend and tunnel have independent login services, `dev.dot-phone-call.backend` and `dev.dot-phone-call.mcp-tunnel`. Chrome and the Mac must be running. The extension restores the registered-client page after backend restarts. The native audio helper starts only when needed.
 

@@ -235,3 +235,8 @@ See [architecture](docs/ARCHITECTURE.md), [background app](docs/BACKGROUND-APP.m
 ### Known dependency advisory
 
 The 2026-10-25 clean install reported one high-severity npm advisory against the locked Zod 3 dependency: [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5). npm proposes a major-version update. That migration has not been tested here; do not treat a successful setup or unit-test run as resolution of the advisory. The local backend already bounds request bodies, but that is not a dependency patch.
+
+## License
+
+[MIT](LICENSE) © 2026 Himanshu Gupta. Dot and ChatGPT are OpenAI products; Twilio and BlackHole are their owners' products. This project is not affiliated with them.
+

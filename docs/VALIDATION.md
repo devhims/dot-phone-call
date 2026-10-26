@@ -99,3 +99,5 @@ Removed: the `Dot Phone Call Helper` app, its Chrome native-messaging host and p
 
 Live checks on this build, with no helper process running: the no-phone check recovered 996.1 Hz on BlackHole 16ch (RMS 0.144, 131 Opus packets, audible for 2.2 s) with no native code involved. Then an incoming call and an outgoing call in the same Dot tab both connected and completed with both directions audible. The backend log recorded Dot's output routed on each (2 elements and 1 context; the second call also saw the closed context from the first, with no errors). The old helper's log was not written by either call.
 
+Restart while idle: a full service restart returned the menu to **Ready for calls** in 9 seconds without user action; the hidden page re-registered with Twilio and calling remained available.
+
