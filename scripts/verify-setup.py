@@ -40,23 +40,23 @@ def check_audio(root=ROOT, status_reader=service_status, timeout=90):
     started = time.time()
     request.write_text(json.dumps({'id': ident, 'expires_at': int((started + timeout + 30) * 1000)}))
     request.chmod(0o600)
-    result_file = root / '.runtime/native-helper-result.json'
+    # The hidden page runs the check; the backend records the result for this request ID.
+    result_file = root / '.runtime/audio-diagnostic-result.json'
     try:
         while time.time() - started < timeout:
-            if result_file.exists() and result_file.stat().st_mtime >= started:
+            if result_file.exists():
                 try:
                     result = json.loads(result_file.read_text())
                 except json.JSONDecodeError:
                     time.sleep(.2)
                     continue
-                if result.get('mode') == 'hidden-audio-test':
-                    if (result.get('verified') and result.get('cleanup_ok') and result.get('audio_restored')
-                        and result.get('dialed') is False and result.get('browser', {}).get('codec') == 'audio/opus'
-                        and result.get('active_frames', 0) >= 48000):
-                        return {key: result[key] for key in ['verified', 'dialed', 'cleanup_ok', 'peak_hz', 'received_frames']}
-                    raise RuntimeError(result.get('code', 'Audio verification or cleanup failed'))
+                if result.get('id') == ident:
+                    if (result.get('verified') and result.get('phone_dialed') is False
+                            and result.get('codec') == 'audio/opus' and result.get('active_ms', 0) >= 1000):
+                        return {'verified': True, 'dialed': False, 'peak_hz': result.get('peak_hz'), 'rms': result.get('rms')}
+                    raise RuntimeError(result.get('code', 'Audio verification failed'))
             time.sleep(.5)
-        raise RuntimeError('Audio diagnostic timed out; check .runtime/native-helper.log and extension Errors')
+        raise RuntimeError('Audio diagnostic timed out; check the extension Errors page and .runtime/app-backend.log')
     finally:
         if request.exists() and json.loads(request.read_text()).get('id') == ident:
             request.unlink()
@@ -70,7 +70,7 @@ if __name__ == '__main__':
         status = service_status()
         if not ready(status):
             raise RuntimeError('Not ready: open Chrome, load the extension, grant its microphone permission, and check the Dot Phone menu')
-        print('Hidden browser registered; microphone permission granted; local helper available.')
+        print('Hidden browser registered; microphone permission granted.')
         if args.audio:
             print(json.dumps(check_audio()))
         print('No phone call was placed. Verify the ChatGPT plugin separately with get_phone_service_status.')

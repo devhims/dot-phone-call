@@ -8,7 +8,6 @@
     "storage",
     "alarms",
     "scripting",
-    "nativeMessaging",
     "offscreen"
   ],
   "host_permissions": [

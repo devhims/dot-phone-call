@@ -19,18 +19,30 @@ const sameSecret=(header,token)=>{
   return a.length===b.length && timingSafeEqual(a,b);
 };
 const instance=z.string().regex(/^[a-zA-Z0-9-]{16,64}$/);
+// Counts and error names only: how Dot's playback was routed during a call.
+function routingReport(diagnostics) {
+  const output=diagnostics?.dot_output;
+  if(!output||typeof output!=='object')return null;
+  const count=key=>Number.isInteger(output[key])&&output[key]>=0&&output[key]<1000?output[key]:undefined;
+  return {routed_elements:count('routed_elements'),routed_contexts:count('routed_contexts'),seen_elements:count('seen_elements'),seen_contexts:count('seen_contexts'),
+    errors:Array.isArray(output.errors)?output.errors.filter(e=>typeof e==='string'&&/^[a-z]+:[A-Za-z]{1,40}$/.test(e)).slice(0,8):[]};
+}
+const diagnosticResult=z.object({instance,id:z.string().uuid(),result:z.object({
+  verified:z.boolean(),code:z.string().regex(/^[A-Z_]{1,60}$/).optional(),sink:z.string().max(40).optional(),codec:z.string().max(40).optional(),
+  packets_received:z.number().int().min(0).max(100000).optional(),peak_hz:z.number().min(0).max(48000).optional(),
+  rms:z.number().min(0).max(2).optional(),active_ms:z.number().int().min(0).max(60000).optional(),phone_dialed:z.literal(false).optional()}).strict()}).strict();
 const companionSchemas={
   pulse:z.object({instance,ready:z.boolean(),busy:z.boolean().optional(),audio_guard_version:z.literal(1).optional()}).strict(),
   update:z.object({instance,call_id:z.string().uuid(),status:z.enum(['starting','ringing','connected','completed','failed','canceled']),code:z.string().regex(/^[A-Z_]{1,60}$/).optional(),diagnostics:z.record(z.unknown()).optional()}).strict(),
   'inbound-ready':z.object({instance,call_id:z.string().uuid(),stream_url:z.string().max(300)}).strict(),
 };
 
-export function createLocalBackend({queue,mcpToken,companionToken,extensionId,publicOrigin,twilio,readStatus,callingEnabled=false,registered=null,readAudioDiagnostic=async()=>null}) {
+export function createLocalBackend({queue,mcpToken,companionToken,extensionId,publicOrigin,twilio,readStatus,callingEnabled=false,registered=null,readAudioDiagnostic=async()=>null,writeAudioDiagnostic=async()=>{},log=line=>console.error(JSON.stringify(line))}) {
   for(const token of [mcpToken,companionToken]) if(typeof token!=='string'||token.length<32) throw new Error('Invalid local credential');
   if(!/^[a-p]{32}$/.test(extensionId)) throw new Error('Invalid paired extension');
   const external=new URL(publicOrigin??'https://unused.invalid');
   if(external.protocol!=='https:'||(publicOrigin&&external.origin!==publicOrigin)||external.username||external.password) throw new Error('Invalid public origin');
-  const nativeStatus=()=>({...queue.perform('status'),...(registered?{registered_client:registered.status(),reason:'The helper checks local audio and the registered Twilio client before dialing. Dot voice starts when the phone answers; incoming calls require the saved caller number and PIN.'}:{}),...((registered&&(!registered.registered()||registered.status().recovery_required))?{can_request_native_dot_call:false,reason:'The local Twilio browser client is not registered.'}:{}),...((registered&&registered.status().microphone_ready===false)?{can_request_native_dot_call:false,reason:'Enable microphone access in the Dot Phone extension setup page.'}:{}),...(!callingEnabled?{can_request_native_dot_call:false,reason:'Local migration checks are running; calling is disabled.'}:{}),plugin_transport:'secure-mcp-tunnel',backend:'local',
+  const nativeStatus=()=>({...queue.perform('status'),...(registered?{registered_client:registered.status(),reason:'Chrome prepares Dot and its BlackHole audio before dialing. Dot voice starts when the phone answers; incoming calls require the saved caller number and PIN.'}:{}),...((registered&&(!registered.registered()||registered.status().recovery_required))?{can_request_native_dot_call:false,reason:'The local Twilio browser client is not registered.'}:{}),...((registered&&registered.status().microphone_ready===false)?{can_request_native_dot_call:false,reason:'Enable microphone access in the Dot Phone extension setup page.'}:{}),...(!callingEnabled?{can_request_native_dot_call:false,reason:'Local migration checks are running; calling is disabled.'}:{}),plugin_transport:'secure-mcp-tunnel',backend:'local',
     fallback_policy:'Explicit hosted fallback only. Never retry an uncertain call with a new request_key.'});
   const env={...twilio,OWNER_CALLS:{getByName:()=>({perform:(action,input)=>
     !callingEnabled&&['inbound_open','inbound_pin'].includes(action)
@@ -99,13 +111,24 @@ export function createLocalBackend({queue,mcpToken,companionToken,extensionId,pu
             return send(res,200,value);
           }catch(error){return send(res,409,{error:/^[A-Z_]{1,80}$/.test(error.message)?error.message:'REGISTERED_REQUEST_FAILED'});}
         }
+        if(action==='audio-diagnostic-result') {
+          // Accept only the result of the currently requested no-phone check.
+          const checked=diagnosticResult.safeParse(parsed);
+          if(!checked.success) return send(res,400,{error:'Invalid diagnostic result'});
+          const requested=await readAudioDiagnostic();
+          if(requested?.id!==checked.data.id) return send(res,409,{error:'DIAGNOSTIC_NOT_REQUESTED'});
+          await writeAudioDiagnostic({id:checked.data.id,at:Date.now(),...checked.data.result});
+          return send(res,200,{recorded:true});
+        }
         const schema=companionSchemas[action];
         if(!schema) return send(res,404,{error:'Not found'});
         const checked=schema.safeParse(parsed);
         if(!checked.success) return send(res,400,{error:'Invalid companion request'});
         if(registered&&action==='pulse'&&checked.data.ready)checked.data.ready=registered.registered();
         const result=queue.perform(action==='inbound-ready'?'inbound_ready':action,checked.data);
-        // Native-host heartbeats continue while browser voice startup is pending.
+        if(action==='update'&&result.accepted!==false)log({event:'call_progress',call_id:checked.data.call_id,status:checked.data.status,
+          code:checked.data.code??null,...(routingReport(checked.data.diagnostics)?{dot_output:routingReport(checked.data.diagnostics)}:{})});
+        // Extension heartbeats continue while browser voice startup is pending.
         if(registered&&action==='pulse'&&checked.data.busy)await registered.heartbeat(checked.data.instance);
         return send(res,200,result);
       }

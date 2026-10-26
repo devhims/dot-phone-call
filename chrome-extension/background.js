@@ -128,11 +128,6 @@ async function endOwned(jobId) {
   return {ended:true,version};
 }
 async function command(message) {
-  if(message.action==='hidden_audio_test'){
-    const result=await bounded(chrome.runtime.sendMessage({target:'dot-phone-offscreen',action:'audio-test'}),15000);
-    if(!result)throw Error('OFFSCREEN_NOT_READY');
-    return result;
-  }
   if(message.action === 'end') return endOwned(message.job_id);
   if(message.action === 'inspect_owned') {
     const value = await owned();
@@ -213,4 +208,4 @@ async function command(message) {
   }
   return {error:'UNKNOWN_COMMAND'};
 }
-importScripts('offscreen-control.js','helper-client.js');
+importScripts('offscreen-control.js','calls.js');

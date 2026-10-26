@@ -10,6 +10,8 @@ export class AudioSession {
     if(!input)throw Error('BLACKHOLE_2CH_NOT_FOUND');
     const output=devices.find(d=>d.kind==='audiooutput'&&/^BlackHole\s+16ch(?:\b|\s)/i.test(d.label));
     if(!output)throw Error('BLACKHOLE_16CH_OUTPUT_NOT_FOUND');
+    // If the Mac's default output is BlackHole, every app's sound would join the call.
+    if(devices.some(d=>d.kind==='audiooutput'&&d.deviceId==='default'&&/BlackHole/i.test(d.label)))throw Error('MAC_DEFAULT_OUTPUT_IS_BLACKHOLE');
     this.stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:input.deviceId},sampleRate:48000,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     if(this.closed){this.stream.getTracks().forEach(t=>t.stop());throw Error('CALL_CANCELED');}
     if(this.stream.getAudioTracks()[0].getSettings().deviceId!==input.deviceId)throw Error('WRONG_MICROPHONE');

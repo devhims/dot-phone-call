@@ -36,8 +36,8 @@ test('bass below the phone band is cut and the consonant band is lifted', () => 
   assert.ok(equalizerDb(8000) < -12, 'audio above the 8 kHz telephone band is attenuated');
 });
 
-test('phone-band response matches the tested mac-bridge chain within 1 dB', () => {
-  // mac-bridge/phone_voice.py at 8 kHz: 260 Hz high-pass and +5 dB shelf at 2 kHz.
+test('phone-band response matches the earlier native bridge within 1 dB', () => {
+  // The removed 8 kHz bridge: 260 Hz high-pass and +5 dB shelf at 2 kHz, phone-tested.
   const bridge = {200: -5.9, 300: -1.9, 500: -.3, 1000: .1, 3000: 4.8, 3400: 5.0};
   for (const [frequency, expected] of Object.entries(bridge)) {
     assert.ok(Math.abs(equalizerDb(Number(frequency)) - expected) < 1, `${frequency} Hz: ${equalizerDb(Number(frequency)).toFixed(2)} dB`);
@@ -142,4 +142,18 @@ test('the call session shapes Dot through phone-voice and plays phone audio to B
   assert.deepEqual(connections.at(-1), ['twilio-remote', 'phone-output']);
   assert.equal(session.voice.options.outputChannelCount[0], 1);
   await session.close();
+});
+
+test('a call refuses to prepare when the Mac default output is BlackHole', async () => {
+  // Every app's sound would otherwise be captured into the phone call.
+  Object.assign(globalThis, {AudioContext: class {constructor() {throw Error('no audio context may open');}}});
+  Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {
+    permissions: {query: async () => ({state: 'granted'})},
+    mediaDevices: {enumerateDevices: async () => [
+        {kind: 'audioinput', label: 'BlackHole 2ch', deviceId: 'bh2-in'},
+        {kind: 'audiooutput', label: 'BlackHole 16ch (Virtual)', deviceId: 'bh16-out'},
+        {kind: 'audiooutput', label: 'Default - BlackHole 2ch (Virtual)', deviceId: 'default'}],
+      getUserMedia: async () => {throw Error('no microphone may open');}}}});
+  const {AudioSession} = await import('../browser/session.js');
+  await assert.rejects(new AudioSession().prepare(), /MAC_DEFAULT_OUTPUT_IS_BLACKHOLE/);
 });

@@ -1,4 +1,4 @@
-import {mkdir,readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {RegisteredCalls} from './registered-calls.mjs';
 import {openLocalQueue} from './local-queue.mjs';
 import {createLocalBackend,twilioStatusReader} from './local-backend.mjs';
@@ -13,6 +13,7 @@ try {
   const registered=new RegisteredCalls({queue,config:twilio,enabled:config.calling_enabled===true,allowPhoneDialing:config.allow_phone_dialing===true});
   const servers=createLocalBackend({queue,registered,mcpToken:config.mcp_token,companionToken:paired.cloud_token,
     readAudioDiagnostic:async()=>{try{return JSON.parse(await readFile(new URL('.runtime/hidden-audio-test-request.json',root),'utf8'));}catch{return null;}},
+    writeAudioDiagnostic:value=>writeFile(new URL('.runtime/audio-diagnostic-result.json',root),JSON.stringify(value),{mode:0o600}),
     extensionId:paired.extension_id,publicOrigin:config.public_origin,twilio,readStatus:twilioStatusReader(twilio),callingEnabled:config.calling_enabled===true});
   const listeners=[servers.privateServer];
   await Promise.all(listeners.map((server,index)=>new Promise((resolve,reject)=>{

@@ -131,14 +131,15 @@ class SetupTests(unittest.TestCase):
     def test_audio_check_collects_only_a_new_verified_no_phone_result(self):
         self.configured()
         status={'mac_online':True,'active_call':None,'registered_client':{'registered':True,'microphone_ready':True,'browser_context':'offscreen','phone_dialing_enabled':False}}
+        path=self.root/'.runtime/audio-diagnostic-result.json'
+        # A stale result from an earlier request must be ignored.
+        path.write_text(json.dumps({'id':'00000000-0000-4000-8000-000000000000','verified':False,'code':'OLD'}))
         def complete(_):
-            import os,time
-            path=self.root/'.runtime/native-helper-result.json'
-            path.write_text(json.dumps({'mode':'hidden-audio-test','verified':True,'cleanup_ok':True,'audio_restored':True,'dialed':False,'browser':{'codec':'audio/opus'},'active_frames':100000,'peak_hz':997.0,'received_frames':120000}))
-            os.utime(path,(time.time()+1,time.time()+1))
+            request=json.loads((self.root/'.runtime/hidden-audio-test-request.json').read_text())
+            path.write_text(json.dumps({'id':request['id'],'verified':True,'phone_dialed':False,'codec':'audio/opus','active_ms':2500,'peak_hz':997.0,'rms':0.14}))
         with patch.object(verify.time,'sleep',side_effect=complete):
             result=verify.check_audio(self.root,status_reader=lambda _:status,timeout=2)
-        self.assertTrue(result['verified']);self.assertFalse(result['dialed'])
+        self.assertTrue(result['verified']);self.assertFalse(result['dialed']);self.assertEqual(result['peak_hz'],997.0)
         self.assertFalse((self.root/'.runtime/hidden-audio-test-request.json').exists())
 
     def test_audio_check_refuses_enabled_calling_without_issuing_request(self):

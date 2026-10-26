@@ -1,7 +1,8 @@
 # Plan: remove the native audio helper
 
-Status: Phase 1 implemented on `experiment/direct-audio-routing`, 26 October 2026.
-Phases 2 to 4 are proposed.
+Status, 26 October 2026: Phase 1 merged to `main`. Phases 2 and 3 implemented on the
+`remove-native-helper` branch; the helper is gone. Phase 4: no-phone check plus live incoming and outgoing calls passed; the longer
+scenario list below (10-minute call, restarts, headset changes) remains to be run.
 
 ## Why this is possible now
 

@@ -1,6 +1,6 @@
 # Dot Phone Call
 
-Make and receive phone-number calls with your own ChatGPT Dot, using its native voice. Your Mac runs the calling backend and audio bridge; Twilio connects the telephone call. No additional language model is used.
+Make and receive phone-number calls with your own ChatGPT Dot, using its native voice. Your Mac runs the calling backend and a Chrome extension that carries the call audio; Twilio connects the telephone call. No additional language model is used.
 
 This is a **macOS developer installation from source**. Each developer supplies their own Twilio account, phone number, ChatGPT access, and Secure MCP Tunnel; no hosted service or shared credentials are involved. There is no downloadable, notarized app installer yet.
 
@@ -12,7 +12,7 @@ This is a **macOS developer installation from source**. Each developer supplies 
 | Chrome with access to Dot | Open your Dot and confirm that its in-app voice works before installing this project. The extension currently controls `https://chatgpt.com/dots/*`. |
 | ChatGPT custom-plugin and tunnel access | Check this before spending time on setup. Account/workspace restrictions still apply; this repository cannot grant those permissions. |
 | Twilio | A voice-capable Twilio number, and Voice **Geographic Permissions** enabled for your own phone's country (Console → Voice → Settings → Geo permissions). Trial accounts can call only verified numbers and play a trial announcement on each call. Real calls use your Twilio balance. |
-| Build tools | [Node.js](https://nodejs.org/en/download) **24+** (the repository's `.nvmrc` selects it with `nvm use`), [Python](https://www.python.org/downloads/macos/) **3.11**, Git, and Xcode Command Line Tools. Python 3.13+ is not supported because retained audio code uses `audioop`. |
+| Build tools | [Node.js](https://nodejs.org/en/download) **24+** (the repository's `.nvmrc` selects it with `nvm use`), [Python](https://www.python.org/downloads/macos/) **3.11 or later** (for setup scripts), Git, and Xcode Command Line Tools (to build the menu-bar app). |
 | Virtual audio | Install **both BlackHole 2ch and BlackHole 16ch** using the [official instructions](https://github.com/ExistentialAudio/BlackHole#installation-instructions). Restart if the installer requests it. |
 
 If you use Homebrew, BlackHole's documented commands are `brew install blackhole-2ch` and `brew install blackhole-16ch`. Install Apple's build tools with `xcode-select --install` if needed. Confirm both BlackHole devices appear in Audio MIDI Setup; leave your normal microphone and speakers selected as defaults.
@@ -25,15 +25,15 @@ Clone this repository using its GitHub **Code** URL, then run the following from
 
 ```sh
 node --version
-python3.11 --version
+python3 --version
 swiftc --version
 npm ci --ignore-scripts
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r mac-bridge/requirements.lock
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
 mkdir -p .runtime
 ```
 
-Expected versions are Node 24 or later and Python 3.11. The project installs JavaScript and Python dependencies locally.
+Expected versions are Node 24 or later and Python 3.11 or later. The project installs JavaScript and Python dependencies locally.
 
 ## 2. Prepare your accounts
 
@@ -73,17 +73,14 @@ Existing files and enabled-calling settings are preserved on subsequent runs. Th
 
 ```sh
 node scripts/build-mac-extension.mjs --enable-calling --backend=local
-.venv/bin/python scripts/build-mac-app.py
-swiftc -module-cache-path .runtime/swift-cache mac-bridge/routing.swift -o .runtime/audio-routing
-.venv/bin/python scripts/install-native-host.py
 npm run build:app
 ```
 
-The extension build creates a unique pairing in `.secrets/mac-companion.json`. Keep that file across rebuilds. The native-host installer registers only that extension's identity with Chrome.
+The extension build creates a unique pairing in `.secrets/mac-companion.json`. Keep that file across rebuilds; the backend accepts only that extension's identity.
 
 `--enable-calling` enables the extension's polling loop. It does **not** enable phone calls while the backend's two calling flags are false.
 
-Generated outputs are `.runtime/dot-phone-extension`, `.runtime/Dot Phone Call Helper.app`, and `.runtime/Dot Phone.app`. They are locally signed and remain tied to this checkout.
+Generated outputs are `.runtime/dot-phone-extension` and `.runtime/Dot Phone.app`. They are locally signed and remain tied to this checkout.
 
 ## 5. Install the background app and load Chrome's extension
 
@@ -99,7 +96,7 @@ The installer records the exact `node` binary on your `PATH` for the login item,
 
 In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select this checkout's `.runtime/dot-phone-extension` folder. Use the Chrome profile where you signed into Dot.
 
-When **Dot Phone audio setup** opens, click **Enable microphone** and allow access. You can close that setup page afterward. Chrome maintains the Twilio bridge in a hidden extension document; no localhost bridge tab is needed. The native **Dot Phone Call Helper** requests macOS microphone permission when its first audio check runs. Allow it in System Settings → Privacy & Security → Microphone if necessary. Chrome also needs microphone access for Dot voice.
+When **Dot Phone audio setup** opens, click **Enable microphone** and allow access. You can close that setup page afterward. Chrome maintains the Twilio bridge in a hidden extension document; no localhost bridge tab is needed. Chrome also needs macOS microphone permission, which Dot's own voice already uses. Calls never change your Mac's default speaker or microphone.
 
 Wait for the app to show Chrome connected. Calling remains disabled until step 9.
 
@@ -110,9 +107,9 @@ Wait for the app to show Chrome connected. Calling remains disabled until step 9
 .venv/bin/python scripts/verify-setup.py --audio
 ```
 
-The first command checks registration and microphone readiness. The second automatically starts the native helper and tests a tone through BlackHole 2ch, local Opus WebRTC, and BlackHole 16ch. Allow the helper's microphone prompt if shown. It requires both calling flags to be false and refuses to run during an active call.
+The first command checks registration and microphone readiness. The second has the hidden Twilio page play a tone into BlackHole 2ch, pass it through the call audio path and local Opus WebRTC, and record what arrives on BlackHole 16ch. It requires both calling flags to be false and refuses to run during an active call.
 
-Success reports `verified: true`, `dialed: false`, `cleanup_ok: true`, and a recovered frequency near 997 Hz. The helper closes after the test. This checks the local audio path, not the telephone network or a spoken Dot reply. No phone number is dialed.
+Success reports `verified: true`, `dialed: false`, and a recovered frequency near 997 Hz. This checks the local audio path, not the telephone network or a spoken Dot reply. No phone number is dialed.
 
 ## 7. Connect your private ChatGPT plugin
 
@@ -163,7 +160,7 @@ Now explicitly ask Dot Phone Local to call you. Confirm audio in both directions
 
 ## Everyday use and updates
 
-Keep the Mac awake, Chrome open, and Dot signed in. The menu-bar app starts at login; the audio helper starts only when needed. The app's **Open logs** action opens local diagnostics. You do not need `npm start` while the app runs; both would compete for port 8894.
+Keep the Mac awake, Chrome open, and Dot signed in. The menu-bar app starts at login. The app's **Open logs** action opens local diagnostics. You do not need `npm start` while the app runs; both would compete for port 8894.
 
 After quitting, relaunch with:
 
@@ -176,13 +173,12 @@ Keep `.secrets/` and the checkout path when updating. Make changes while no call
 | Changed files | What to do |
 | --- | --- |
 | `browser/` or `chrome-extension/` | Rerun `node scripts/build-mac-extension.mjs --enable-calling --backend=local`, then reload **Dot Phone Call (local)** in `chrome://extensions`. Chrome keeps running the old copy until you reload it. |
-| `mac-bridge/*.py` | Nothing. The audio helper loads them at the start of each call. |
 | `src/` | **Dot Phone → Restart services**. |
 | `mac-app/` | `npm run build:app`, then **Dot Phone → Restart services**. |
-| `mac-bridge/launcher.swift` | `.venv/bin/python scripts/build-mac-app.py`. |
-| `mac-bridge/routing.swift` | Rerun the `swiftc` command from step 4. |
 
 Do not run simultaneous calls from two checkouts of this project.
+
+Upgrading from a version that used the native **Dot Phone Call Helper**: rebuild and reload the extension as above, restart services, and rerun `pip install -r requirements.lock`. The old helper is no longer launched. You can delete `.runtime/Dot Phone Call Helper.app` and `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.dot_phone_call.helper.json`.
 
 To stop the login installation while retaining source and private configuration:
 
@@ -203,7 +199,7 @@ Finish any call, then:
 1. Run `.venv/bin/python scripts/install-background-app.py --restore` to remove the login item.
 2. If you switched incoming routing, restore it with the command above.
 3. Remove **Dot Phone Call (local)** in `chrome://extensions`.
-4. Delete the Chrome native-host registration: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.dot_phone_call.helper.json`.
+4. If an earlier version registered a Chrome native host, delete `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.dot_phone_call.helper.json`.
 5. Delete the checkout. Its `.secrets/` folder holds your Twilio and OpenAI credentials; revoke the Twilio API key and OpenAI runtime key in their consoles if you no longer need them.
 
 ## Troubleshooting
@@ -214,10 +210,10 @@ Finish any call, then:
 | macOS blocks `tunnel-client` | Confirm you downloaded it from OpenAI's official release, then allow it under System Settings → Privacy & Security and run `.runtime/tunnel-client help quickstart` again. |
 | Installer reports Node is too old | Run `nvm use` (or install Node 24+) so `node --version` shows 24 or later, then rerun the installer. |
 | App installer fails | Check Node is on PATH, `.runtime/tunnel-client` is executable, the wizard completed, and ports 8894/8896 are unused. Inspect `.runtime/app-backend.log` and `.runtime/app-tunnel.log`. Fix the cause, then rerun the installer. |
-| Microphone denied | Open the extension's **Options** page to enable microphone access. Check macOS microphone permission for Chrome and Dot Phone Call Helper. |
+| Microphone denied | Open the extension's **Options** page to enable microphone access. Check macOS microphone permission for Chrome. |
 | Chrome disconnected | Load the extension in the correct profile and inspect its Errors page. Reload it after rebuilding. |
-| `AUDIO_ROUTE_ALREADY_IN_USE` | An active BlackHole device is protected from takeover. Idle BlackHole defaults left after a headset disconnect now recover to built-in audio automatically; close the application using BlackHole if the device is genuinely active. |
-| Audio diagnostic fails | Inspect `.runtime/native-helper-result.json` and `.runtime/native-helper.log`. Keep calling disabled until it passes. |
+| `MAC_DEFAULT_OUTPUT_IS_BLACKHOLE` | Your Mac's default speaker is a BlackHole device, so every app's sound would join the call. Choose your normal speakers in System Settings → Sound (a disconnected headset can leave BlackHole selected), then retry. |
+| Audio diagnostic fails | Inspect `.runtime/audio-diagnostic-result.json` and the extension's Errors page. Keep calling disabled until it passes. |
 | Unexpected music/background audio | Calls route only Dot's tab and the hidden Twilio page to BlackHole. Check that no other app is set to output to BlackHole 2ch. |
 | `DOT_OUTPUT_NOT_ROUTED` | Dot connected but its playback could not be sent to BlackHole 2ch. Reload the Dot tab and the extension, then retry. If it persists, Dot's page may have changed how it plays audio. |
 | Dot controls unavailable | Confirm Dot voice works manually in Chrome. This integration depends on Dot's browser UI and may need updates when it changes. |
@@ -227,13 +223,12 @@ Finish any call, then:
 
 ```sh
 npm test
-npm run test:python
 npm run test:app
 npm run test:setup
 npm run test:tunnel
 ```
 
-Automated tests use simulated provider calls and audio devices. `test:setup` uses temporary directories and mocked service installation. `test:tunnel` checks the local MCP probe over stdio, not your real OpenAI tunnel. None of these commands dial a phone. Scripts under `prototype/` and `mac-bridge/test-session.py` are separate experiments; some can place calls and are not setup instructions.
+Automated tests use simulated provider calls and audio devices. `test:setup` uses temporary directories and mocked service installation. `test:tunnel` checks the local MCP probe over stdio, not your real OpenAI tunnel. None of these commands dial a phone. Call progress, including how Dot's audio was routed, is logged to `.runtime/app-backend.log`.
 
 See [architecture](docs/ARCHITECTURE.md), [background app](docs/BACKGROUND-APP.md), and [validation history](docs/VALIDATION.md). The history records the original installation's tests; it is not a prerequisite or a source of credentials for your installation. The latest hidden-bridge validation used no phone call. A fresh-account end-to-end install and full reboot have not been independently verified yet.
 

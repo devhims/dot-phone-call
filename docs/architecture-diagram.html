@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Dot Phone Call fits together</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-soft:    #7a8399;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+    .subtitle { color: var(--color-muted); font-size: 0.95rem; margin-bottom: 1.5rem; max-width: 52rem; line-height: 1.5; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .note {
+      margin-top: 1.25rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid rgba(45,49,66,0.12);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--color-soft);
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · dot-phone-call</p>
+    <h1>How Dot Phone Call fits together</h1>
+    <p class="subtitle">Dot asks for a call through the Dot Phone Local plugin, whose tools run on your Mac behind an OpenAI tunnel. The backend queues it, Twilio connects your phone to a hidden browser client, and BlackHole carries Dot's voice and yours between Dot's tab and that client, without touching your Mac's speakers or microphone.</p>
+
+    <svg viewBox="0 0 1232 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dot-phone-architecture-title dot-phone-architecture-desc">
+      <title id="dot-phone-architecture-title">How Dot Phone Call fits together</title>
+      <desc id="dot-phone-architecture-desc">Architecture of Dot Phone Call: ChatGPT Dot calls the Dot Phone Local plugin's tools, which reach a local backend through an OpenAI Secure MCP Tunnel; the Chrome extension polls the backend for calls, runs each call, creates and manages a hidden Twilio page, and controls Dot's tab; the backend places and verifies calls with Twilio, which connects the owner's phone to the hidden page over WebRTC; and BlackHole virtual devices carry audio between Dot's tab and the hidden page.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        <marker id="arrow-start" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-link-start" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- ============ ZONES ============ -->
+      <rect x="24" y="48" width="368" height="568" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="36" y="52" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="60" y="61" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CLOUD</text>
+      <rect x="416" y="48" width="792" height="568" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="428" y="52" width="232" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="544" y="61" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">YOUR MAC · DOT PHONE.APP KEEPS IT RUNNING</text>
+      <rect x="536" y="248" width="648" height="232" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="960" y="252" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="988" y="261" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CHROME</text>
+
+      <!-- ============ CONNECTORS (drawn before nodes) ============ -->
+      <!-- Dot's voice session: ChatGPT <-> Dot tab, over the top -->
+      <path d="M200,80 V48 Q200,40 208,40 H1112 Q1120,40 1120,48 V280" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-start="url(#arrow-link-start)" marker-end="url(#arrow-link)"/>
+      <!-- Dot invokes the plugin's tools -->
+      <path d="M248,112 H312" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- The plugin reaches the local backend as MCP through the tunnel -->
+      <path d="M512,112 H560" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- Backend places and verifies calls with Twilio -->
+      <path d="M760,144 V192 Q760,200 752,200 H312 Q304,200 304,208 V408 Q304,416 296,416 H248" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- Phone line -->
+      <path d="M148,464 V520" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-start="url(#arrow-link-start)" marker-end="url(#arrow-link)"/>
+      <!-- WebRTC call audio: Twilio <-> hidden page (crossed by the native messaging lane) -->
+      <path d="M248,448 H560" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-start="url(#arrow-link-start)" marker-end="url(#arrow-link)"/>
+      <!-- Extension polls the backend for calls (hops over the Twilio API line) -->
+      <path d="M600,280 V208 a 8,8 0 0,0 0,-16 V144" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <!-- Extension creates and manages the hidden page (offscreen document) -->
+      <path d="M680,344 V400" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- Extension controls Dot's tab -->
+      <path d="M800,312 H920" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- Hidden page checks in with the backend (hops over the control line) -->
+      <path d="M800,416 H832 Q840,416 840,408 V320 a 8,8 0 0,1 0,-16 V120 Q840,112 832,112 H800" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- Dot tab <-> BlackHole: Dot's voice out, your voice in -->
+      <path d="M1040,344 V520" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+      <!-- Hidden page <-> BlackHole: call audio -->
+      <path d="M800,448 H872 Q880,448 880,456 V544 Q880,552 888,552 H920" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-start="url(#arrow-start)" marker-end="url(#arrow)"/>
+
+      <!-- ============ CONNECTOR LABELS ============ -->
+      <rect x="624" y="20" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="660" y="29" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VOICE SESSION</text>
+      <rect x="262" y="92" width="36" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="280" y="101" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TOOLS</text>
+      <rect x="522" y="92" width="28" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="536" y="101" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MCP</text>
+      <rect x="384" y="180" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="189" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST API</text>
+      <rect x="532" y="228" width="60" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="562" y="237" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POLLS JOBS</text>
+      <rect x="848" y="236" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="876" y="245" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHECK-INS</text>
+      <rect x="688" y="366" width="80" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="728" y="375" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CREATES · CHECKS</text>
+      <rect x="848" y="292" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="880" y="301" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CONTROLS DOT</text>
+      <rect x="336" y="428" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="380" y="437" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WEBRTC · OPUS</text>
+      <rect x="156" y="486" width="60" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="186" y="495" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PHONE CALL</text>
+      <rect x="1048" y="424" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="1084" y="433" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SPEAKER · MIC</text>
+      <rect x="812" y="496" width="60" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="842" y="505" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CALL AUDIO</text>
+
+      <!-- ============ NODES ============ -->
+      <rect x="48" y="80" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="80" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="56" y="86" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+      <text x="74" y="95" fill="rgba(45,49,66,0.60)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLOUD</text>
+      <text x="148" y="116" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ChatGPT · Dot</text>
+      <text x="148" y="132" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">voice agent · plugin host</text>
+      <rect x="312" y="80" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="312" y="80" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="320" y="86" width="40" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+      <text x="340" y="95" fill="rgba(45,49,66,0.60)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TUNNEL</text>
+      <text x="412" y="116" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dot Phone Local plugin</text>
+      <text x="412" y="132" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">OpenAI Secure MCP Tunnel</text>
+      <rect x="48" y="400" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="400" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="56" y="406" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+      <text x="74" y="415" fill="rgba(45,49,66,0.60)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLOUD</text>
+      <text x="148" y="436" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Twilio</text>
+      <text x="148" y="452" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">number · PIN · client routing</text>
+      <rect x="48" y="520" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="520" width="200" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="56" y="526" width="32" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.60)" stroke-width="0.8"/>
+      <text x="72" y="535" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">USER</text>
+      <text x="148" y="556" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Your phone</text>
+      <text x="148" y="572" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">saved owner number</text>
+      <rect x="560" y="80" width="240" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="80" width="240" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="568" y="86" width="32" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="584" y="95" fill="rgba(235,108,54,0.90)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NODE</text>
+      <text x="680" y="116" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Local backend</text>
+      <text x="680" y="132" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">tools · queue · 127.0.0.1:8894</text>
+      <rect x="560" y="280" width="240" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="280" width="240" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="568" y="286" width="28" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="582" y="295" fill="rgba(235,108,54,0.90)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <text x="680" y="316" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chrome extension</text>
+      <text x="680" y="332" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">runs calls · polls every 5 s</text>
+      <rect x="560" y="400" width="240" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="400" width="240" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="568" y="406" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="584" y="415" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PAGE</text>
+      <text x="680" y="436" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Hidden Twilio page</text>
+      <text x="680" y="452" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Voice SDK · voice shaping</text>
+      <rect x="920" y="280" width="240" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="920" y="280" width="240" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="928" y="286" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="942" y="295" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TAB</text>
+      <text x="1040" y="316" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dot tab</text>
+      <text x="1040" y="332" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">chatgpt.com/dots</text>
+      <rect x="920" y="520" width="240" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="920" y="520" width="240" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="928" y="526" width="36" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="946" y="535" fill="rgba(79,93,117,0.90)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AUDIO</text>
+      <text x="1040" y="556" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">BlackHole</text>
+      <text x="1040" y="572" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">2ch: Dot out · 16ch: phone in</text>
+
+      <!-- ============ LEGEND ============ -->
+      <line x1="24" y1="648" x2="1208" y2="648" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="24" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+      <rect x="104" y="662" width="20" height="14" rx="3" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="132" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">Key component</text>
+
+      <rect x="236" y="662" width="20" height="14" rx="3" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="264" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">Cloud service</text>
+
+
+      <line x1="532" y1="669" x2="564" y2="669" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="572" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">Network / cloud link</text>
+
+      <line x1="696" y1="669" x2="728" y2="669" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="736" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">Local link</text>
+
+      <line x1="812" y1="669" x2="844" y2="669" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="852" y="672" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">Periodic poll</text>
+
+      <text x="24" y="700" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">Double-headed arrows carry audio or traffic in both directions.</text>
+    </svg>
+
+    <p class="note">Not drawn: the menu-bar app's supervisor, which starts the backend and the tunnel client on your Mac and restarts them if they crash; the extension also reports call progress to the backend. Incoming calls reach Twilio first, which asks for your PIN before ringing the hidden page.</p>
+  </div>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // Pure state machine. Its owner Durable Object commits each operation atomically.
 export const TERMINAL = new Set(['completed','failed','canceled','expired']);
 const active = job => !TERMINAL.has(job.status);
-const offlineReason = 'Keep Chrome open with calling enabled in the paired extension. The Mac audio helper starts on demand.';
+const offlineReason = 'Keep Chrome open with calling enabled in the paired extension.';
 const challengeWords = new Set('purple yellow silver orange garden window mountain river rabbit tiger eagle dolphin'.split(' '));
 function audioDiagnostics(value) {
   if (!value || value.stage !== 'browser_audio_preflight' || value.phone_dialed !== false) return;
@@ -108,7 +108,7 @@ export function operate(state, action, input = {}, now = Date.now()) {
   if (action === 'status') return {
     inbound_supported:true,
     native_dot_audio:'mac_blackhole', additional_llm:false, mac_online:online(),
-    reason:online() ? 'The helper checks the local audio route and public bridge before dialing, then starts Dot when the phone answers. Spoken audio diagnostics run separately.' : offlineReason,
+    reason:online() ? 'Chrome prepares Dot and its BlackHole audio before dialing, then starts Dot when the phone answers.' : offlineReason,
     can_request_native_dot_call:online() && guarded() && !state.mac.busy && !current(),
     can_place_native_dot_call:false,
     audio_preflight_required:true,

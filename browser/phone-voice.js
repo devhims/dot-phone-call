@@ -1,5 +1,5 @@
 // Telephone voice conditioning for Dot-to-phone audio in the browser call path.
-// A port of mac-bridge/phone_voice.py, designed at the AudioContext rate.
+// Ported from the project's earlier native bridge (8 kHz), redesigned at the AudioContext rate.
 //
 // Synthesized speech puts most of its energy below 300 Hz, which handsets and
 // carrier codecs discard, while consonants (2-3.4 kHz) stay quiet. This stage

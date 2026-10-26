@@ -148,3 +148,38 @@ test('local audio diagnostic requests require disabled calling, an idle session,
   }finally{await new Promise(r=>{servers.privateServer.close(r);servers.privateServer.closeAllConnections();});queue.close();}
  }
 });
+
+test('no-phone check results are recorded only for the requested ID and only with known fields',async t=>{
+  const queue=openLocalQueue(':memory:'),id=randomUUID(),written=[];
+  const servers=createLocalBackend({queue,mcpToken,companionToken,extensionId,twilio,
+    readAudioDiagnostic:async()=>({id,expires_at:Date.now()+60000}),writeAudioDiagnostic:async value=>{written.push(value);}});
+  await new Promise(r=>servers.privateServer.listen(0,'127.0.0.1',r));
+  t.after(async()=>{await new Promise(r=>{servers.privateServer.close(r);servers.privateServer.closeAllConnections();});queue.close();});
+  const post=data=>fetch(`http://127.0.0.1:${servers.privateServer.address().port}/companion/audio-diagnostic-result`,{method:'POST',
+    headers:{Authorization:'Bearer '+companionToken,'Content-Type':'application/json'},body:JSON.stringify({instance,...data})});
+  const result={verified:true,sink:'blackhole-16ch',codec:'audio/opus',packets_received:120,peak_hz:997,rms:0.14,active_ms:2500,phone_dialed:false};
+  assert.equal((await post({id:randomUUID(),result})).status,409);
+  assert.equal((await post({id,result:{...result,extra:'not allowed'}})).status,400);
+  assert.equal((await post({id,result:{...result,phone_dialed:true}})).status,400);
+  assert.equal(written.length,0);
+  const response=await post({id,result});
+  assert.equal(response.status,200);
+  assert.equal(written.length,1);assert.equal(written[0].id,id);assert.equal(written[0].peak_hz,997);
+});
+
+test('call progress is logged with Dot output routing counts but no free text',async t=>{
+  const queue=openLocalQueue(':memory:'),lines=[];
+  const servers=createLocalBackend({queue,mcpToken,companionToken,extensionId,twilio,callingEnabled:true,log:line=>lines.push(line)});
+  await new Promise(r=>servers.privateServer.listen(0,'127.0.0.1',r));
+  t.after(async()=>{await new Promise(r=>{servers.privateServer.close(r);servers.privateServer.closeAllConnections();});queue.close();});
+  const post=(path,data)=>fetch(`http://127.0.0.1:${servers.privateServer.address().port}${path}`,{method:'POST',
+    headers:{Authorization:'Bearer '+companionToken,'Content-Type':'application/json'},body:JSON.stringify({instance,...data})});
+  await post('/companion/pulse',{ready:true,busy:false,audio_guard_version:1});
+  queue.perform('start',{request_key:randomUUID(),duration_seconds:60});
+  const job=(await (await post('/companion/pulse',{ready:true,busy:false,audio_guard_version:1})).json()).job;
+  await post('/companion/update',{call_id:job.id,status:'failed',code:'DOT_OUTPUT_NOT_ROUTED',diagnostics:{dot_output:{
+    routed_elements:2,routed_contexts:1,seen_elements:2,seen_contexts:1,errors:['elements:NotAllowedError','<script>'],note:'free text is dropped'}}});
+  assert.equal(lines.length,1);
+  assert.deepEqual(lines[0],{event:'call_progress',call_id:job.id,status:'failed',code:'DOT_OUTPUT_NOT_ROUTED',
+    dot_output:{routed_elements:2,routed_contexts:1,seen_elements:2,seen_contexts:1,errors:['elements:NotAllowedError']}});
+});
