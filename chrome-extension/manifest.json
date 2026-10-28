@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dot Phone Call (local)",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Start and end Dot's browser voice session for your paired Mac phone bridge.",
   "minimum_chrome_version": "120",
   "permissions": [

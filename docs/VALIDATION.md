@@ -101,3 +101,12 @@ Live checks on this build, with no helper process running: the no-phone check re
 
 Restart while idle: a full service restart returned the menu to **Ready for calls** in 9 seconds without user action; the hidden page re-registered with Twilio and calling remained available.
 
+## Call log, and the first call after a Chrome restart, 27 and 28 October 2026
+
+Two live calls could not be explained from the old one-line progress log:
+
+- 27 October, 23:00, outgoing: Dot stopped speaking partway through. Twilio showed both legs connected for 114 seconds and ending together, the extension reported Dot's output routed with no errors, and the backend recorded a normal completion. Nothing showed which direction went silent.
+- 28 October, 14:42, incoming, 8 minutes after Chrome started: the extension answered, pressed Start call, saw Dot's voice controls appear, and then saw them disappear before Dot's microphone connected (`DOT_VOICE_ENDED_BEFORE_CONNECT`). A retry 5 minutes later in the same tab answered normally without clicking the tab. Both calls used the same tab ID, which suggests the extension opened the Dot tab for the first call and Dot was not yet ready to hold a voice session. Not confirmed.
+
+The backend, extension and hidden Twilio page now write one timestamped call log (`.runtime/logs/`), read with `npm run call-log`. It records the reason the backend ended each call (phone hung up, Dot's hang-up tool, extension heartbeat lost, Twilio client unregistered, time limit, restart), how the Dot tab was found and how old its page was, how voice start progressed, Dot's microphone track and player state, Twilio errors and warnings, and 5-second audio peaks for the caller, Dot's raw voice and the audio sent to the phone. Live check, 28 October 2026, 15:12 and 15:13: one call placed by Dot and one call from the owner's phone both connected and were hung up from the phone. Each was logged end to end by all three parts: dial or PIN, Chrome answering, Dot connecting about 1.6 seconds after Start call, 5-second audio peaks in both directions (about -10 to -20 dB while speaking), and the ending, with Twilio's phone-leg durations (65 s and 54 s). Those calls exposed reader mistakes that were then fixed: a call Dot places was labeled incoming (Chrome is rung as a Twilio leg either way), a Twilio disconnect after the phone hung up was described as a dropped connection, and a suspended Dot audio context was flagged although Dot was audible, so that signal is no longer reported. 124 JavaScript tests pass.
+

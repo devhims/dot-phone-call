@@ -27,12 +27,15 @@ export function twilioProvider(config,request=fetch) {
 // Serializes lifecycle transitions, including the intent written before dialing.
 // Never retries a call creation whose response was lost.
 export class RegisteredCalls {
-  constructor({queue,config,provider=twilioProvider(config),enabled=false,allowPhoneDialing=false,now=Date.now}) {
-    Object.assign(this,{queue,config,provider,enabled,allowPhoneDialing,now});
+  constructor({queue,config,provider=twilioProvider(config),enabled=false,allowPhoneDialing=false,now=Date.now,log=()=>{}}) {
+    Object.assign(this,{queue,config,provider,enabled,allowPhoneDialing,now,log});
     this.capability=randomBytes(32).toString('hex');this.lease=null;this.tail=Promise.resolve();
     this.record=queue.readRegistered?.()??null;
     this.recovering=!!this.record;this.lastProviderCheck=0;
+    if(this.record)this.trace('recovering_previous_call',{ended:!!this.record.ended});
   }
+  // Call log events; `call` is the queue job ID, Twilio SIDs identify the legs.
+  trace(ev,fields={}){try{this.log('backend',ev,{call:this.record?.job,...fields});}catch{}}
   exclusive(fn){const next=this.tail.then(fn);this.tail=next.catch(()=>{});return next;}
   save(){this.queue.writeRegistered?.(this.record);}
   registered(){return !!this.lease?.ready&&this.now()-this.lease.at<12000;}
@@ -48,6 +51,7 @@ export class RegisteredCalls {
       if(this.record&&this.record.job!==job.id)fail('REGISTERED_CALL_BUSY');
       this.record??={job:job.id,direction:job.direction??'outbound',parent:job.inbound_call_sid??null,created:this.now()};
       this.record.instance=input.instance;this.record.helperReady=true;this.record.helperAt=this.now();this.save();
+      this.trace('extension_prepared',{direction:this.record.direction});
       return {ready:true};
     }
     if(!this.record||this.record.job!==job.id)fail('REGISTERED_CALL_MISSING');
@@ -61,7 +65,7 @@ export class RegisteredCalls {
     if(job.instance===instance&&!TERMINAL.has(job.status)&&!job.cancel_requested)r.helperAt=this.now();
   });}
   async finish(jobId) {return this.exclusive(async()=>{
-    if(this.record?.job===jobId)await this.end();
+    if(this.record?.job===jobId)await this.end('extension_finished');
     return {ended:!this.record};
   });}
   async verifiedCall(id) {
@@ -70,6 +74,14 @@ export class RegisteredCalls {
     return call;
   }
   async incoming(input) {
+    this.trace('incoming_ringing',{child:input.sid});
+    try {
+      const result=await this.incomingChecked(input);
+      this.trace('incoming_authorized',{call:result.job_id,child:input.sid,parent:this.record?.parent});
+      return result;
+    } catch(error) {this.trace('incoming_rejected',{child:input.sid,code:error.message});throw error;}
+  }
+  async incomingChecked(input) {
     if(!this.enabled||!this.registered()||this.recovering)fail('REGISTERED_CLIENT_UNAVAILABLE');
     const child=await this.verifiedCall(input.sid);
     if(child.to!=='client:'+this.config.CLIENT_IDENTITY||!sid(child.parent_call_sid)||providerTerminal.has(child.status))fail('CALL_IDENTITY_MISMATCH');
@@ -85,6 +97,7 @@ export class RegisteredCalls {
         const open=this.queue.perform('inbound_open',{inbound_call_sid:parent.sid});
         if(open.status!=='pin_required')fail('INBOUND_NOT_AVAILABLE');
         const pinOk=/^\d{6}$/.test(input.pin??'')&&/^[a-f0-9]{64}$/.test(this.config.INBOUND_PIN_HASH??'')&&equal(createHash('sha256').update(this.config.INBOUND_PIN_SALT+':'+input.pin).digest('hex'),this.config.INBOUND_PIN_HASH);
+        this.trace('pin_checked',{ok:pinOk,parent:parent.sid});
         const queued=this.queue.perform('inbound_pin',{inbound_call_sid:parent.sid,pin_ok:pinOk});
         if(!pinOk||queued.status!=='waiting')fail('INBOUND_AUTHORIZATION_FAILED');
         const job=this.queue.perform('status').active_call;
@@ -99,6 +112,7 @@ export class RegisteredCalls {
     if(!/^[a-zA-Z0-9-]{16,64}$/.test(input.client??''))fail('INVALID_CLIENT');
     if(this.lease&&this.lease.client!==input.client&&this.now()-this.lease.at<12000)fail('ANOTHER_BROWSER_REGISTERED');
     if(action==='token') {
+      if(this.lease?.client!==input.client)this.trace('bridge_page_connected');
       this.lease={client:input.client,at:this.now(),ready:this.lease?.ready??false,tokenUntil:this.now()+3600000};
       return {token:accessToken(this.config,this.now())};
     }
@@ -106,9 +120,12 @@ export class RegisteredCalls {
     this.lease.at=this.now();
     if(action==='events')return {ready:true};
     if(action==='pulse') {
+      const was={ready:this.lease.ready,microphone:this.lease.microphoneReady};
       this.lease.ready=input.registered===true;
       this.lease.context=input.context==='offscreen'?'offscreen':'tab';
       this.lease.microphoneReady=input.microphone_ready!==false;
+      if(was.ready!==this.lease.ready)this.trace(this.lease.ready?'twilio_client_registered':'twilio_client_unregistered',{context:this.lease.context});
+      if(was.microphone!==undefined&&was.microphone!==this.lease.microphoneReady)this.trace('bridge_microphone_permission',{granted:this.lease.microphoneReady});
       await this.tick();
       const r=this.record;
       let token;
@@ -121,24 +138,28 @@ export class RegisteredCalls {
     if(action==='failed'){
       if(!/^[A-Z_]{1,60}$/.test(input.code??''))fail('INVALID_FAILURE_CODE');
       this.queue.perform('update',{instance:r.instance,call_id:r.job,status:'failed',code:input.code});
-      await this.end();return {failed:true};
+      await this.end('bridge_failed',{code:input.code});return {failed:true};
     }
     if(action==='released'){r.released=true;this.save();if(r.ended)await this.end();return {released:true};}
-    if(action==='ended'){r.released=true;await this.end();return {ended:true};}
+    if(action==='ended'){r.released=true;await this.end('twilio_client_disconnected');return {ended:true};}
     if(r.ended||this.recovering)fail('CALL_NOT_OWNED');
     const job=this.queue.perform('get',{call_id:r.job});
-    if(TERMINAL.has(job.status)||job.cancel_requested){await this.end();fail('CALL_CANCELED');}
+    if(TERMINAL.has(job.status)||job.cancel_requested){await this.end('end_requested');fail('CALL_CANCELED');}
     if(action==='ready') {
       if(!r.helperReady||!this.registered())fail('AUDIO_NOT_READY');
+      this.trace('bridge_audio_ready');
       if(r.unknown)fail('CALL_CREATION_OUTCOME_UNKNOWN');
       if(r.direction==='outbound'&&!r.intent) {
         if(!this.allowPhoneDialing)fail('PHONE_DIALING_DISABLED');
         for(const key of ['INBOUND_OWNER_NUMBER','INBOUND_TWILIO_NUMBER'])if(!/^\+[1-9][0-9]{7,14}$/.test(this.config[key]??''))fail('INVALID_SAVED_NUMBER');
         r.intent=true;r.unknown=true;this.save();
+        this.trace('dialing_owner',{time_limit_s:job.duration_seconds});
         const twiml=`<Response><Dial timeout="45" timeLimit="${job.duration_seconds}" answerOnBridge="true" record="do-not-record"><Client>${xml(this.config.CLIENT_IDENTITY)}</Client></Dial><Hangup/></Response>`;
-        const call=await this.provider.create({To:this.config.INBOUND_OWNER_NUMBER,From:this.config.INBOUND_TWILIO_NUMBER,Twiml:twiml,Timeout:'25',TimeLimit:String(job.duration_seconds+45),Record:'false'});
+        const call=await this.provider.create({To:this.config.INBOUND_OWNER_NUMBER,From:this.config.INBOUND_TWILIO_NUMBER,Twiml:twiml,Timeout:'25',TimeLimit:String(job.duration_seconds+45),Record:'false'})
+          .catch(error=>{this.trace('dial_failed',{code:error.message});throw error;});
         if(!sid(call.sid))fail('CALL_CREATION_OUTCOME_UNKNOWN');
         r.parent=call.sid;r.unknown=false;this.save();
+        this.trace('owner_dialed',{parent:call.sid});
         this.queue.perform('update',{instance:r.instance,call_id:r.job,status:'ringing'});
       }
       return {ready:true};
@@ -147,35 +168,45 @@ export class RegisteredCalls {
       if(!r.child||r.child!==input.sid||!r.helperReady)fail('CALL_NOT_OWNED');
       const child=await this.verifiedCall(r.child);
       if(child.parent_call_sid!==r.parent||child.to!=='client:'+this.config.CLIENT_IDENTITY||child.status!=='in-progress')fail('CALL_NOT_CONNECTED');
-      r.connected=true;this.save();return {connected:true};
+      r.connected=true;this.save();
+      this.trace('client_connected',{child:r.child});
+      return {connected:true};
     }
     if(action==='ended'){await this.end();return {ended:true};}
     fail('UNKNOWN_REGISTERED_ACTION');
   });}
-  async end() {
+  // The first reason given is the one that ended the call; later calls only retry cleanup.
+  async end(reason,fields={}) {
     const r=this.record;if(!r)return;
+    if(!r.ended&&reason)this.trace('call_ending',{reason,...fields});
     r.ended=true;this.queue.perform('end',{call_id:r.job});this.save();
     if(r.parent) {
       const parent=await this.verifiedCall(r.parent);
       const expected=r.direction==='inbound'?[this.config.INBOUND_OWNER_NUMBER,this.config.INBOUND_TWILIO_NUMBER]:[this.config.INBOUND_TWILIO_NUMBER,this.config.INBOUND_OWNER_NUMBER];
       if(parent.from!==expected[0]||parent.to!==expected[1])fail('CALL_IDENTITY_MISMATCH');
-      if(!providerTerminal.has(parent.status))await this.provider.end(r.parent);
+      if(!providerTerminal.has(parent.status)){await this.provider.end(r.parent);this.trace('phone_hangup_sent',{parent:r.parent});}
       const verified=await this.verifiedCall(r.parent);
       if(!providerTerminal.has(verified.status))fail('PHONE_HANGUP_UNCONFIRMED');
+      if(!r.phoneEndLogged){r.phoneEndLogged=true;this.save();this.trace('phone_leg_ended',{status:verified.status,duration_s:Number(verified.duration)||null});}
     }
     if(r.unknown)fail('CALL_CREATION_OUTCOME_UNKNOWN');
     if(r.helperReady&&!r.released)return;
+    this.trace('call_released');
     this.record=null;this.recovering=false;this.save();
   }
   async tick() {
     const r=this.record;if(!r)return;
     const job=this.queue.perform('get',{call_id:r.job});
-    if(this.recovering||r.ended||TERMINAL.has(job.status)||job.cancel_requested||!this.registered()||this.now()-r.created>(job.duration_seconds+90)*1000||(r.helperAt&&this.now()-r.helperAt>15000))return this.end();
+    if(r.ended)return this.end();
+    const reason=this.recovering?'backend_recovering':TERMINAL.has(job.status)?'job_'+job.status:job.cancel_requested?'end_requested'
+      :!this.registered()?'twilio_client_lost':this.now()-r.created>(job.duration_seconds+90)*1000?'time_limit'
+      :r.helperAt&&this.now()-r.helperAt>15000?'extension_unresponsive':null;
+    if(reason)return this.end(reason);
     if(r.parent&&this.now()-this.lastProviderCheck>3000){
       this.lastProviderCheck=this.now();const parent=await this.verifiedCall(r.parent);
-      if(providerTerminal.has(parent.status))await this.end();
+      if(providerTerminal.has(parent.status))await this.end('phone_'+parent.status);
     }
   }
   monitor(){return this.exclusive(()=>this.tick());}
-  close(){return this.exclusive(()=>this.end());}
+  close(){return this.exclusive(()=>this.end('backend_stopping'));}
 }

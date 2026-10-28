@@ -218,6 +218,20 @@ Finish any call, then:
 | `DOT_OUTPUT_NOT_ROUTED` | Dot connected but its playback could not be sent to BlackHole 2ch. Reload the Dot tab and the extension, then retry. If it persists, Dot's page may have changed how it plays audio. |
 | Dot controls unavailable | Confirm Dot voice works manually in Chrome. This integration depends on Dot's browser UI and may need updates when it changes. |
 | Phone does not ring | Check Dot's call status, saved number format, Twilio account restrictions, and calling flags. A queued request is not a confirmed call. |
+| Dot did not answer, the call dropped, or Dot went silent | Run `npm run call-log` right after the call. See [Diagnosing a call](#diagnosing-a-call). |
+
+### Diagnosing a call
+
+Every call is logged to `.runtime/logs/calls-YYYY-MM-DD.jsonl` (kept for 14 days). The backend, the extension's worker and the hidden Twilio page each add timestamped events: the phone ringing and being answered, how the Dot tab was found, how long Dot took to start, Dot's microphone and player state, Twilio's errors and network warnings, the reason the call ended, and every 5 seconds the peak audio level of your voice, Dot's voice and what was sent to the phone. The log never contains phone numbers, the PIN, speech or transcripts.
+
+```sh
+npm run call-log                # the most recent call
+npm run call-log -- --list      # recent calls, one line each
+npm run call-log -- 3d18377a    # one call, by ID prefix
+npm run call-log -- --all       # include every audio event in the timeline
+```
+
+The report starts with a plain-language diagnosis, for example "Dot's voice session opened and then closed before it connected" with how long the Dot tab had been open, "How it ended: the phone leg ended", or "Dot made no sound from 1:10 to 1:35 while you were speaking". The timeline and audio table below it show the details.
 
 ## Development and verification
 
@@ -228,7 +242,7 @@ npm run test:setup
 npm run test:tunnel
 ```
 
-Automated tests use simulated provider calls and audio devices. `test:setup` uses temporary directories and mocked service installation. `test:tunnel` checks the local MCP probe over stdio, not your real OpenAI tunnel. None of these commands dial a phone. Call progress, including how Dot's audio was routed, is logged to `.runtime/app-backend.log`.
+Automated tests use simulated provider calls and audio devices. `test:setup` uses temporary directories and mocked service installation. `test:tunnel` checks the local MCP probe over stdio, not your real OpenAI tunnel. None of these commands dial a phone. Calls are logged to `.runtime/logs/` (read them with `npm run call-log`); service output goes to `.runtime/app-backend.log`.
 
 See [architecture](docs/ARCHITECTURE.md), [background app](docs/BACKGROUND-APP.md), and [validation history](docs/VALIDATION.md). The history records the original installation's tests; it is not a prerequisite or a source of credentials for your installation. The latest hidden-bridge validation used no phone call. A fresh-account end-to-end install and full reboot have not been independently verified yet.
 

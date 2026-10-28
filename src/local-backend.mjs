@@ -37,7 +37,7 @@ const companionSchemas={
   'inbound-ready':z.object({instance,call_id:z.string().uuid(),stream_url:z.string().max(300)}).strict(),
 };
 
-export function createLocalBackend({queue,mcpToken,companionToken,extensionId,publicOrigin,twilio,readStatus,callingEnabled=false,registered=null,readAudioDiagnostic=async()=>null,writeAudioDiagnostic=async()=>{},log=line=>console.error(JSON.stringify(line))}) {
+export function createLocalBackend({queue,mcpToken,companionToken,extensionId,publicOrigin,twilio,readStatus,callingEnabled=false,registered=null,readAudioDiagnostic=async()=>null,writeAudioDiagnostic=async()=>{},log=line=>console.error(JSON.stringify(line)),callLog={event:()=>{},events:()=>0}}) {
   for(const token of [mcpToken,companionToken]) if(typeof token!=='string'||token.length<32) throw new Error('Invalid local credential');
   if(!/^[a-p]{32}$/.test(extensionId)) throw new Error('Invalid paired extension');
   const external=new URL(publicOrigin??'https://unused.invalid');
@@ -69,6 +69,7 @@ export function createLocalBackend({queue,mcpToken,companionToken,extensionId,pu
         let value;
         try {value=JSON.parse(await readBody(req,8192));}catch{return send(res,400,{error:'Invalid JSON'});}
         try {
+          if(path==='/bridge/log')return send(res,200,{recorded:callLog.events('bridge',value.events)});
           if(path==='/bridge/events') {
             await registered.browser('events',value);
             res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store','X-Accel-Buffering':'no'});
@@ -111,6 +112,10 @@ export function createLocalBackend({queue,mcpToken,companionToken,extensionId,pu
             return send(res,200,value);
           }catch(error){return send(res,409,{error:/^[A-Z_]{1,80}$/.test(error.message)?error.message:'REGISTERED_REQUEST_FAILED'});}
         }
+        if(action==='log') {
+          if(!instance.safeParse(parsed.instance).success)return send(res,400,{error:'Invalid instance'});
+          return send(res,200,{recorded:callLog.events('extension',parsed.events)});
+        }
         if(action==='audio-diagnostic-result') {
           // Accept only the result of the currently requested no-phone check.
           const checked=diagnosticResult.safeParse(parsed);
@@ -126,14 +131,24 @@ export function createLocalBackend({queue,mcpToken,companionToken,extensionId,pu
         if(!checked.success) return send(res,400,{error:'Invalid companion request'});
         if(registered&&action==='pulse'&&checked.data.ready)checked.data.ready=registered.registered();
         const result=queue.perform(action==='inbound-ready'?'inbound_ready':action,checked.data);
-        if(action==='update'&&result.accepted!==false)log({event:'call_progress',call_id:checked.data.call_id,status:checked.data.status,
-          code:checked.data.code??null,...(routingReport(checked.data.diagnostics)?{dot_output:routingReport(checked.data.diagnostics)}:{})});
+        if(action==='update'&&result.accepted!==false){
+          const routing=routingReport(checked.data.diagnostics);
+          log({event:'call_progress',call_id:checked.data.call_id,status:checked.data.status,code:checked.data.code??null,...(routing?{dot_output:routing}:{})});
+          callLog.event('backend','call_status',{call:checked.data.call_id,status:checked.data.status,code:checked.data.code??null,
+            ...(routing?{dot_routed_elements:routing.routed_elements,dot_routed_contexts:routing.routed_contexts,dot_output_errors:routing.errors.join(' ')||null}:{})});
+        }
         // Extension heartbeats continue while browser voice startup is pending.
         if(registered&&action==='pulse'&&checked.data.busy)await registered.heartbeat(checked.data.instance);
         return send(res,200,result);
       }
-      const mcp=makeMcpServer({nativeStatus,readStatus,
-        startCall:input=>callingEnabled&&(!registered||(registered.registered()&&!registered.status().recovery_required))?queue.perform('start',input):{status:'blocked',code:'LOCAL_CALLING_DISABLED',call_placed:false},getCall:input=>queue.perform('get',input),endCall:input=>queue.perform('end',input)});
+      // Dot's own tool calls: shows when Dot asked for a call or hung one up.
+      const startCall=input=>{
+        const result=callingEnabled&&(!registered||(registered.registered()&&!registered.status().recovery_required))?queue.perform('start',input):{status:'blocked',code:'LOCAL_CALLING_DISABLED',call_placed:false};
+        callLog.event('backend','dot_tool_start_call',{call:result.id??null,status:result.status??null,code:result.code??null,time_limit_s:input.duration_seconds??null});
+        return result;
+      };
+      const endCall=input=>{const result=queue.perform('end',input);callLog.event('backend','dot_tool_end_call',{call:input.call_id??result.id??null,status:result.status??null});return result;};
+      const mcp=makeMcpServer({nativeStatus,readStatus,startCall,getCall:input=>queue.perform('get',input),endCall});
       const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
       res.on('close',()=>{void transport.close();void mcp.close();});
       await mcp.connect(transport);

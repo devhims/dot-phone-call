@@ -76,7 +76,7 @@ async function microphone(tabId, action, jobId, deadline, options) {
     target:{tabId}, world:'MAIN',
     func:async (action, jobId, deadline, options) => {
       const route = globalThis.dotPhoneMicrophone;
-      if (!route || route.version !== '0.1.9') {
+      if (!route || route.version !== '0.1.10') {
         return action === 'disarm' ? {released:true} : {error:'DOT_MICROPHONE_RELOAD_REQUIRED'};
       }
       try {return await route[action](jobId, deadline, options);}
@@ -141,18 +141,21 @@ async function command(message) {
     const preferred=(await chrome.storage.local.get('preferredTabId')).preferredTabId;
     const selected=tabs.find(t=>t.id===preferred) || tabs.find(t=>t.active)
       || tabs.sort((a,b)=>(b.lastAccessed||0)-(a.lastAccessed||0))[0];
-    const tab = (!message.diagnostic_new_tab && selected) || await chrome.tabs.create({url:'https://chatgpt.com/dots/home',active:true});
+    const began=Date.now();
+    const existing=!message.diagnostic_new_tab && selected;
+    const tab = existing || await chrome.tabs.create({url:'https://chatgpt.com/dots/home',active:true});
     const deadline=Date.now()+15000;
     await focusTab(tab);
     await waitForDotDocument(tab.id,deadline);
-    await refreshTabIfNeeded(tab.id);
+    const reloaded=await refreshTabIfNeeded(tab.id);
     await waitForDotDocument(tab.id,deadline);
     while(Date.now()<deadline) {
       const result = await ensureControls(tab.id).catch(()=>null);
       if(result?.active) return {error:'DOT_VOICE_ALREADY_ACTIVE'};
       if(result?.ready) {
         await microphone(tab.id,'status','');
-        return {ready:true,tab_id:tab.id,version};
+        return {ready:true,tab_id:tab.id,version,diagnostics:{tab_created:!existing,tab_reloaded:reloaded,
+          tab_was_discarded:!!existing?.discarded,page_age_ms:result.page_age_ms??null,prepare_ms:Date.now()-began}};
       }
       await sleep(250);
     }
@@ -162,7 +165,8 @@ async function command(message) {
     const tab = await chrome.tabs.get(message.tab_id);
     if(!tab.url?.startsWith('https://chatgpt.com/dots/')) return {error:'DOT_TAB_CHANGED'};
     await focusTab(tab);
-    if((await ensureControls(tab.id)).active) return {error:'DOT_VOICE_ALREADY_ACTIVE'};
+    const before=await ensureControls(tab.id);
+    if(before.active) return {error:'DOT_VOICE_ALREADY_ACTIVE'};
     if(canceled.has(message.job_id)) return {error:'CALL_CANCELED'};
     const leaseDeadline = Date.now()+(message.duration_seconds+100)*1000;
     await chrome.storage.local.set({owned:{jobId:message.job_id,tabId:tab.id,deadline:leaseDeadline}});
@@ -174,15 +178,20 @@ async function command(message) {
       await microphone(tab.id,'disarm',message.job_id);
       return {error:'CALL_CANCELED'};
     }
+    const began=Date.now();
+    let activeAfter=null, result=null, audio=null;
+    // How voice start progressed, for the call log.
+    const diagnostics=()=>({page_age_ms:before.page_age_ms??null,active_after_ms:activeAfter,waited_ms:Date.now()-began,
+      dot_active:!!result?.active,dot_connected:!!result?.connected,microphone_verified:!!audio?.microphone_verified,microphone_error:audio?.error??null});
     const started = await messageTab(tab.id,'start');
-    if(started.error) { await endOwned(message.job_id); return started; }
+    if(started.error) { await endOwned(message.job_id); return {...started,diagnostics:diagnostics()}; }
     const deadline=Date.now()+35000;
     let sawActive = false;
     while(Date.now()<deadline) {
       if(canceled.has(message.job_id)) return {error:'CALL_CANCELED'};
-      const result = await inspect(tab.id);
-      if(result.active) sawActive = true;
-      const audio = await microphone(tab.id,'status',message.job_id);
+      result = await inspect(tab.id);
+      if(result.active) {sawActive = true; activeAfter??=Date.now()-began;}
+      audio = await microphone(tab.id,'status',message.job_id);
       if(result.connected && audio.microphone_verified) {
         // Gate: Dot's voice must be routed to BlackHole 2ch, or it would play
         // on the speakers and never reach the phone.
@@ -193,18 +202,18 @@ async function command(message) {
           await sleep(250);
           routed=await microphone(tab.id,'status',message.job_id);
         }
-        if(!routed.output_verified) return {error:'DOT_OUTPUT_NOT_ROUTED',diagnostics:{output:routed.output??null}};
-        return {connected:true,tab_id:tab.id,version,...routed};
+        if(!routed.output_verified) return {error:'DOT_OUTPUT_NOT_ROUTED',diagnostics:{...diagnostics(),output:routed.output??null}};
+        return {connected:true,tab_id:tab.id,version,...routed,diagnostics:diagnostics()};
       }
       // Start call begins an asynchronous UI/network transition. Absence of
       // Hang up before it first appears is not evidence that voice ended.
-      if(!result.active && sawActive) return {error:'DOT_VOICE_ENDED_BEFORE_CONNECT'};
+      if(!result.active && sawActive) return {error:'DOT_VOICE_ENDED_BEFORE_CONNECT',diagnostics:diagnostics()};
       await sleep(250);
     }
     // The companion receives the failure immediately and then requests cleanup.
-    const audio = await microphone(tab.id,'status',message.job_id);
+    audio = await microphone(tab.id,'status',message.job_id);
     return {error:!sawActive ? 'DOT_VOICE_START_TIMEOUT'
-      : audio.microphone_verified ? 'DOT_VOICE_CONNECT_TIMEOUT' : 'DOT_MICROPHONE_NOT_VERIFIED'};
+      : audio.microphone_verified ? 'DOT_VOICE_CONNECT_TIMEOUT' : 'DOT_MICROPHONE_NOT_VERIFIED',diagnostics:diagnostics()};
   }
   return {error:'UNKNOWN_COMMAND'};
 }

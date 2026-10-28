@@ -22,6 +22,32 @@ async function cloudRequest(action, data) {
   return result;
 }
 
+// Call log events go to the local backend in small batches and never hold up a call.
+const traceQueue=[];
+let traceFlushing=false;
+const flat=value=>Object.fromEntries(Object.entries(value??{}).flatMap(([key,item])=>
+  item&&typeof item==='object'&&!Array.isArray(item)
+    ? Object.entries(item).map(([inner,v])=>[key+'_'+inner,Array.isArray(v)?v.join(' '):v])
+    : [[key,Array.isArray(item)?item.join(' '):item]]));
+function trace(ev, fields={}) {
+  if(!DOT_PHONE_CONFIG.callingEnabled||traceQueue.length>=200)return;
+  traceQueue.push({ev,at:Date.now(),...fields});
+  void flushTrace();
+}
+async function flushTrace() {
+  if(traceFlushing)return;
+  traceFlushing=true;
+  try {while(traceQueue.length)await cloudRequest('log',{events:traceQueue.splice(0,20)}).catch(()=>{});}
+  finally {traceFlushing=false;}
+}
+// What changed in Dot's tab during a call: voice controls, microphone track, players.
+function dotState(inspected) {
+  return {dot_active:!!inspected.active,dot_connected:!!inspected.connected,microphone_verified:!!inspected.microphone_verified,
+    microphone_track:inspected.microphone_track??null,microphone_error:inspected.error??null,
+    ...flat({microphone_events:inspected.microphone_events}),suspended_contexts:inspected.output?.suspended_contexts??null,
+    output_errors:inspected.output?.errors?.join(' ')||null};
+}
+
 // Dot tab commands report failures as {error}; a call treats both forms alike.
 async function browserCommand(message) {
   let value;
@@ -56,44 +82,56 @@ async function finishCall(jobId, code, diagnostics) {
 
 async function runCall(job) {
   callRunning=true;
-  let code=null, started=false, output=null, lastPulse=0;
+  let code=null, started=false, output=null, lastPulse=0, ending=null, phoneConnected=false, lastState='';
   let deadline=Date.now()+PRE_CONNECT_MS;
+  const call=job.id, began=Date.now();
+  trace('call_job_received',{call,direction:job.direction??'outbound',time_limit_s:job.duration_seconds});
   try {
     await chrome.storage.local.set({[CALL_RECORD]:{id:job.id,startedAt:Date.now()}});
     const prepared=await browserCommand({action:'prepare'});
+    trace('dot_tab_prepared',{call,...flat(prepared.diagnostics)});
     await cloudRequest('registered-prepare',{call_id:job.id});
     while(true) {
       // Busy pulses keep the backend's ownership fresh and carry cancellations.
       if(Date.now()-lastPulse>=2000) {
         lastPulse=Date.now();
         const state=await cloudRequest('pulse',{ready:false,busy:true,audio_guard_version:1});
-        if(state.cancel_call_id===job.id) break;
+        if(state.cancel_call_id===job.id) {ending='end_requested';break;}
       }
       const status=await cloudRequest('registered-state',{call_id:job.id});
-      if(status.ended) break;
+      if(status.ended) {ending='backend_ended_call';break;}
+      if(status.connected&&!phoneConnected) {phoneConnected=true;trace('phone_connected',{call,after_ms:Date.now()-began});}
       if(status.connected&&!started) {
+        trace('dot_start_requested',{call});
         const result=await browserCommand({action:'start',job_id:job.id,tab_id:prepared.tab_id,duration_seconds:job.duration_seconds+30});
         if(!result.connected||!result.microphone_verified) throw new Error('DOT_MICROPHONE_NOT_VERIFIED');
         output=result.output??null;
         started=true;
         deadline=Date.now()+job.duration_seconds*1000;
+        trace('dot_connected',{call,...flat(result.diagnostics),routed_elements:output?.routed_elements??null,routed_contexts:output?.routed_contexts??null});
         await cloudRequest('update',{call_id:job.id,status:'connected'});
       }
       if(started) {
         const inspected=await browserCommand({action:'inspect_owned',job_id:job.id});
         output=inspected.output??output;
+        const state=dotState(inspected),key=JSON.stringify(state);
+        if(key!==lastState) {lastState=key;trace('dot_state',{call,...state});}
         // A Dot player that refused BlackHole 2ch would play on the speakers.
         if(output?.errors?.length) throw new Error('DOT_OUTPUT_NOT_ROUTED');
-        if(!inspected.active||!inspected.microphone_verified) break;
+        if(!inspected.active) {ending='dot_hung_up';break;}
+        if(!inspected.microphone_verified) {ending='dot_microphone_lost';break;}
       }
       if(Date.now()>deadline) throw new Error('REGISTERED_CALL_TIMEOUT');
       await callSleep(1000);
     }
   } catch(error) {
     code=failureCode(error);
+    trace('call_failed',{call,code,...flat(error.diagnostics)});
   } finally {
+    trace('call_loop_ended',{call,reason:ending??'failed',code,after_ms:Date.now()-began});
     const routing=output?{dot_output:output}:undefined;
     const result=await finishCall(job.id,code,routing);
+    trace('call_finished',{call,code:result.code,cleanup:result.cleanup});
     await chrome.storage.local.set({lastCall:{id:job.id,code:result.code,cleanup:result.cleanup,output,at:Date.now()}});
     callRunning=false;
   }
@@ -137,6 +175,7 @@ async function boot() {
   const state=await chrome.storage.local.get(['helperInstance',CALL_RECORD]);
   instance=state.helperInstance||crypto.randomUUID();
   await chrome.storage.local.set({helperInstance:instance});
+  trace('extension_started',{interrupted_call:state[CALL_RECORD]?.id??null});
   try {
     // A worker restart cannot resume a call safely; finish it exactly once.
     if(state[CALL_RECORD]) await finishCall(state[CALL_RECORD].id,'EXTENSION_RESTARTED');

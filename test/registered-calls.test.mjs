@@ -5,14 +5,14 @@ import {RegisteredCalls,accessToken,incomingTwiml,twilioProvider} from '../src/r
 import {openLocalQueue} from '../src/local-queue.mjs';
 const ACCOUNT='AC'+'1'.repeat(32),PARENT='CA'+'2'.repeat(32),CHILD='CA'+'3'.repeat(32);
 const config={TWILIO_ACCOUNT_SID:ACCOUNT,TWILIO_AUTH_TOKEN:'test-only',TWILIO_API_KEY_SID:'SK'+'4'.repeat(32),TWILIO_API_KEY_SECRET:'test-key',CLIENT_IDENTITY:'dot_phone_test',INBOUND_OWNER_NUMBER:'+15555550101',INBOUND_TWILIO_NUMBER:'+15555550102',INBOUND_PIN_SALT:'salt',INBOUND_PIN_HASH:createHash('sha256').update('salt:123456').digest('hex')};
-async function fixture(t,{allow=true,enabled=true,createError=false}={}) {
+async function fixture(t,{allow=true,enabled=true,createError=false,log}={}) {
   const queue=openLocalQueue(':memory:');t.after(()=>queue.close());
   let now=Date.now();const calls=new Map(),created=[],ended=[];
   const provider={get:async id=>{assert.ok(calls.has(id));return {...calls.get(id)};},create:async options=>{
     created.push(options);if(createError)throw Error('NETWORK_TIMEOUT');
     calls.set(PARENT,{sid:PARENT,account_sid:ACCOUNT,from:config.INBOUND_TWILIO_NUMBER,to:config.INBOUND_OWNER_NUMBER,status:'ringing',direction:'outbound-api'});return {sid:PARENT};
   },end:async id=>{ended.push(id);calls.get(id).status='completed';}};
-  const gateway=new RegisteredCalls({queue,config,provider,enabled,allowPhoneDialing:allow,now:()=>now});
+  const gateway=new RegisteredCalls({queue,config,provider,enabled,allowPhoneDialing:allow,now:()=>now,log});
   const client=randomUUID(),instance=randomUUID();
   const browser=(action,input={})=>gateway.browser(action,{client,...input});
   await browser('token');await browser('pulse',{registered:true});
@@ -163,4 +163,25 @@ test('the hidden page learns a call is prepared without any audio capability',as
   const pulsed=(await f.browser('pulse',{registered:true})).job;
   assert.equal(pulsed.id,job.id);assert.equal(pulsed.prepared,true);
   assert.equal('audio_capability' in pulsed,false);
+});
+test('the call log records why each call ended, and never the PIN or phone numbers',async t=>{
+  const cases={browser:'twilio_client_lost',provider:'phone_completed',tool:'end_requested',heartbeat:'extension_unresponsive'};
+  for(const [cause,reason] of Object.entries(cases)) {
+    const lines=[],f=await fixture(t,{log:(src,ev,fields)=>lines.push({src,ev,...fields})}),job=f.start();
+    await f.helper('prepare',job,{audio_capability:'a'.repeat(43)});await f.browser('ready',{job_id:job.id});
+    if(cause==='browser')f.advance(13000);
+    if(cause==='provider'){f.calls.get(PARENT).status='completed';f.advance(4000);}
+    if(cause==='tool')f.queue.perform('end',{call_id:job.id});
+    if(cause==='heartbeat'){f.advance(10000);await f.browser('pulse',{registered:true});f.advance(6000);await f.browser('pulse',{registered:true});}
+    await f.gateway.monitor();await f.gateway.monitor();
+    const endings=lines.filter(l=>l.ev==='call_ending');
+    assert.deepEqual(endings.map(l=>l.reason),[reason],cause);
+    assert.equal(endings[0].call,job.id);
+  }
+  const lines=[],f=await fixture(t,{log:(src,ev,fields)=>lines.push({src,ev,...fields})});f.incomingRecords();
+  await f.browser('incoming',{sid:CHILD,pin:'123456'});
+  assert.deepEqual(lines.filter(l=>l.ev.startsWith('incoming')||l.ev==='pin_checked').map(l=>l.ev),['incoming_ringing','pin_checked','incoming_authorized']);
+  assert.equal(lines.find(l=>l.ev==='pin_checked').ok,true);
+  const text=JSON.stringify(lines);
+  for(const secret of ['123456',config.INBOUND_OWNER_NUMBER,config.INBOUND_TWILIO_NUMBER,config.TWILIO_AUTH_TOKEN])assert.ok(!text.includes(secret),secret);
 });

@@ -119,6 +119,8 @@ test('the call session shapes Dot through phone-voice and plays phone audio to B
     createGain() {throw Error('flat gain must not be used');}
     createMediaStreamDestination() {return {...node('to-twilio'), stream: {getTracks: () => []}};}
     createMediaStreamSource(stream) {return node(stream.name);}
+    // The level meter reads Dot's raw voice; a quiet half-scale tone peaks at -6 dBFS.
+    createAnalyser() {return {...node('dot-level'), getFloatTimeDomainData(data) {data.fill(0); data[3] = -.5;}};}
   }
   class AudioWorkletNode {constructor(context, name, options) {Object.assign(this, node(name), {options});}}
   const track = {getSettings: () => ({deviceId: 'bh2-in'}), stop() {}};
@@ -137,11 +139,13 @@ test('the call session shapes Dot through phone-voice and plays phone audio to B
   await session.prepare();
   assert.equal(session.context.sinkId, 'bh16-out');
   assert.deepEqual(modules, ['phone-voice-worklet.js']);
-  assert.deepEqual(connections, [['blackhole-2ch', 'phone-voice'], ['phone-voice', 'to-twilio']]);
+  assert.deepEqual(connections, [['blackhole-2ch', 'phone-voice'], ['phone-voice', 'to-twilio'], ['blackhole-2ch', 'dot-level']]);
+  assert.equal(session.dotPeakDb(), -6);
   await session.remote({getRemoteStream: () => ({name: 'twilio-remote'})});
   assert.deepEqual(connections.at(-1), ['twilio-remote', 'phone-output']);
   assert.equal(session.voice.options.outputChannelCount[0], 1);
   await session.close();
+  assert.equal(session.dotPeakDb(), null);
 });
 
 test('a call refuses to prepare when the Mac default output is BlackHole', async () => {

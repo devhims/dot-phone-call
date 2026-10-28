@@ -1,7 +1,7 @@
 // Runs in the page's MAIN world before Dot can cache getUserMedia. No pairing
 // credentials or audio samples cross this interface. Unowned calls pass through.
 (() => {
-  if (globalThis.dotPhoneMicrophone?.version === '0.1.9') return;
+  if (globalThis.dotPhoneMicrophone?.version === '0.1.10') return;
   const media = navigator.mediaDevices;
   if (!media?.getUserMedia) return;
   const original = media.getUserMedia;
@@ -30,7 +30,11 @@
       if (!tracks.length || tracks.some(track => track.getSettings().deviceId !== value.deviceId)) {
         throw new Error('DOT_MICROPHONE_DEVICE_MISMATCH');
       }
-      for (const track of tracks) value.tracks.add(track);
+      for (const track of tracks) {
+        value.tracks.add(track);
+        // A muted or ended phone-audio track means Dot stops hearing the caller.
+        for (const type of ['mute', 'unmute', 'ended']) track.addEventListener?.(type, () => {value.events[type] += 1;});
+      }
       return stream;
     } catch (error) {
       for (const track of stream?.getTracks() || []) track.stop();
@@ -44,7 +48,7 @@
   // Experiment: route Dot's playback to BlackHole 2ch for an armed call only,
   // instead of switching the Mac's default output. Records how Dot plays audio.
   const players = new Set(), contexts = new Set();
-  const output = {seen_elements:0, seen_contexts:0, routed_elements:0, routed_contexts:0, errors:[]};
+  const output = {seen_elements:0, seen_contexts:0, routed_elements:0, routed_contexts:0, suspended_contexts:0, errors:[]};
   const live = refs => [...refs].map(ref => ref.deref()).filter(Boolean);
   // Dot closes a context after each voice session; closed contexts cannot play
   // and Chrome rejects changing their output, so they are skipped, not errors.
@@ -85,6 +89,8 @@
         super(...args);
         contexts.add(new WeakRef(this));
         output.seen_contexts += 1;
+        // A suspended context plays nothing, so Dot would go silent on the phone.
+        this.addEventListener?.('statechange', () => {if (this.state === 'suspended') output.suspended_contexts += 1;});
         void route(this, 'contexts');
       }
     };
@@ -105,7 +111,7 @@
     value.routed?.clear();
   }
   globalThis.dotPhoneMicrophone = {
-    version:'0.1.9',
+    version:'0.1.10',
     async arm(jobId, deadline, options = {}) {
       if (session) {
         if (session.jobId !== jobId) throw new Error('DOT_MICROPHONE_ALREADY_OWNED');
@@ -131,12 +137,13 @@
       }
       // Recheck after the asynchronous device lookup.
       if (session) throw new Error('DOT_MICROPHONE_ALREADY_OWNED');
-      const value = {jobId, deadline, deviceId:device.deviceId, label:device.label, tracks:new Set(), error:null, routed:new Set()};
+      const value = {jobId, deadline, deviceId:device.deviceId, label:device.label, tracks:new Set(), error:null, routed:new Set(),
+        events:{mute:0, unmute:0, ended:0}};
       if (options?.output === 'blackhole-2ch') {
         const speaker = devices.find(d => d.kind === 'audiooutput' && /^BlackHole\s+2ch(?:\s+\([^)]*\))?$/i.test(d.label.trim()));
         if (!speaker?.deviceId) throw new Error('BLACKHOLE_OUTPUT_NOT_FOUND');
         value.outputId = speaker.deviceId;
-        output.routed_elements = output.routed_contexts = 0;
+        output.routed_elements = output.routed_contexts = output.suspended_contexts = 0;
         output.errors.length = 0;
       }
       session = value;
@@ -151,8 +158,11 @@
       if (!value || value.jobId !== jobId) return {microphone_verified:false};
       const error = value.error || (expired(value) ? 'DOT_MICROPHONE_LEASE_EXPIRED' : null)
         || (media.getUserMedia !== wrapped ? 'DOT_MICROPHONE_HOOK_REPLACED' : null);
+      const latest = [...value.tracks].at(-1);
       return {armed:true, microphone:value.label,
         microphone_verified:!error && [...value.tracks].some(track => valid(track, value)),
+        microphone_track:!latest ? 'none' : latest.readyState === 'ended' ? 'ended' : latest.muted ? 'muted' : 'live',
+        microphone_events:{...value.events},
         ...(value.outputId ? {output:{device:'BlackHole 2ch', ...output, errors:[...output.errors]},
           output_verified:output.routed_elements + output.routed_contexts > 0 && !output.errors.length} : {}),
         ...(error ? {error} : {})};

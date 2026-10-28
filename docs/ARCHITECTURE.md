@@ -41,7 +41,8 @@ The browser client stays registered while idle without opening the microphone. T
 ## Components
 
 - `src/registered-calls.mjs`: registered-client authorization, token renewal, provider calls, and durable recovery.
-- `src/local-backend.mjs`, `local-main.mjs`, `local-queue.mjs`: private HTTP MCP, companion API, SQLite queue, and the call-progress log (`.runtime/app-backend.log`).
+- `src/local-backend.mjs`, `local-main.mjs`, `local-queue.mjs`: private HTTP MCP, companion API, SQLite queue, and service output (`.runtime/app-backend.log`).
+- `src/call-log.mjs`, `call-timeline.mjs`, `scripts/call-log.mjs`: the per-call event log in `.runtime/logs/`, written by the backend and by the extension and hidden page through `/companion/log` and `/bridge/log`, and the `npm run call-log` report that explains each call.
 - `chrome-extension/calls.js`: the background worker's call runner: claims calls, prepares and starts Dot, watches the call, finishes it, and runs requested no-phone checks.
 - `chrome-extension/background.js`, `content.js`: Dot tab selection and controls.
 - `chrome-extension/microphone-route.js`: during an armed call, forces Dot's microphone to BlackHole 16ch and routes Dot's audio elements and audio contexts to BlackHole 2ch, then restores them.

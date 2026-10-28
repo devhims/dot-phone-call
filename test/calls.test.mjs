@@ -139,3 +139,20 @@ test('a requested no-phone check runs in the hidden page and reports to the back
   await f.run('pollCloud()');
   assert.equal(f.requests.filter(([a]) => a === 'audio-diagnostic-result').length, 1, 'same request ID runs once');
 });
+
+test('a failed Dot start sends its timeline to the call log', async () => {
+  const f = await fixture({config: {callingEnabled: true}, backend: callingBackend([{connected: true}]), commands: {
+    prepare: {ready: true, tab_id: 7, diagnostics: {tab_created: true, page_age_ms: 4100, prepare_ms: 900}},
+    start: {error: 'DOT_VOICE_ENDED_BEFORE_CONNECT', diagnostics: {page_age_ms: 7200, active_after_ms: 1800, waited_ms: 14200}}}});
+  await run(f);
+  for (let i = 0; i < 10; i++) await flush();
+  const logged = f.requests.filter(([a]) => a === 'log').flatMap(([, body]) => body.events);
+  const named = name => logged.find(e => e.ev === name);
+  assert.equal(named('dot_tab_prepared').tab_created, true);
+  assert.equal(named('dot_tab_prepared').page_age_ms, 4100);
+  assert.equal(named('call_failed').code, 'DOT_VOICE_ENDED_BEFORE_CONNECT');
+  assert.equal(named('call_failed').page_age_ms, 7200);
+  assert.equal(named('call_loop_ended').reason, 'failed');
+  assert.equal(named('call_finished').code, 'DOT_VOICE_ENDED_BEFORE_CONNECT');
+  assert.ok(logged.every(e => e.call === JOB.id || e.ev === 'extension_started'));
+});

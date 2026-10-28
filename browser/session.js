@@ -23,7 +23,18 @@ export class AudioSession {
     if(this.closed)throw Error('CALL_CANCELED');
     this.voice=new AudioWorkletNode(this.context,'phone-voice',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit'});
     this.destination=this.context.createMediaStreamDestination();
-    this.context.createMediaStreamSource(this.stream).connect(this.voice).connect(this.destination);
+    const dot=this.context.createMediaStreamSource(this.stream);
+    dot.connect(this.voice).connect(this.destination);
+    // Dot's raw level before voice shaping, so the call log can tell "Dot was silent"
+    // apart from "Dot spoke but nothing reached the phone".
+    this.dotLevel=this.context.createAnalyser();this.dotLevel.fftSize=32768;dot.connect(this.dotLevel);
+  }
+  // Peak of the last ~0.7 s in dBFS. Reads a level only; no samples are kept.
+  dotPeakDb() {
+    if(!this.dotLevel||this.closed)return null;
+    const data=new Float32Array(this.dotLevel.fftSize);this.dotLevel.getFloatTimeDomainData(data);
+    let peak=0;for(const x of data)peak=Math.max(peak,Math.abs(x));
+    return peak>0?Math.max(-100,Math.round(20*Math.log10(peak))):-100;
   }
   async remote(call) {
     for(let n=0;n<50&&!call.getRemoteStream();n++){if(this.closed)throw Error('CALL_CANCELED');await new Promise(r=>setTimeout(r,100));}

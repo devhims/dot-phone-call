@@ -1,6 +1,6 @@
 // Only visible call controls are inspected. No chat text, cookies or audio APIs.
 (() => {
-  const version = '0.2.0';
+  const version = '0.2.1';
   const visible = element => !!element && element.getClientRects().length > 0;
   const control = label => [...document.querySelectorAll('button[aria-label], [role="button"][aria-label]')]
     .find(e => e.getAttribute('aria-label') === label && visible(e));
@@ -10,7 +10,8 @@
     const move = control('Move call controls');
     const hasDraft=[...document.querySelectorAll('[contenteditable="true"], textarea')]
       .some(element=>visible(element) && String(element.value ?? element.textContent ?? '').trim());
-    return {version, ready:!!control('Start call'), active:!!hangup, has_draft:hasDraft,
+    // page_age_ms: a Dot page that has just loaded may show Start call before it can hold a voice session.
+    return {version, ready:!!control('Start call'), active:!!hangup, has_draft:hasDraft, page_age_ms:globalThis.performance ? Math.round(performance.now()) : null,
       // Dot renders e.g. "Chase00:24Drag..." without text-node separators.
       connected:!!hangup && !!move && /(?:^|\D)\d{1,3}\s*:\s*[0-5]\d(?!\d)/.test(move.textContent || '')};
   }
