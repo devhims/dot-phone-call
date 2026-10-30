@@ -41,6 +41,7 @@ async function fixture({config = {callingEnabled: false}, stored = {}, backend =
     browserErrorCode: error => /^[A-Z_]{1,60}$/.test(error?.message || '') ? error.message : 'BROWSER_COMMAND_FAILED',
     ensureHiddenBridge: async () => backend.hidden ?? {registered: true, microphone_ready: true},
     hiddenBridgeStatus: async () => ({}),
+    keepDotTabReady: async () => {browser.push('keep'); return backend.keep ?? null;},
   });
   vm.runInContext(source, context);
   for (let i = 0; i < 5; i++) await flush();
@@ -155,4 +156,13 @@ test('a failed Dot start sends its timeline to the call log', async () => {
   assert.equal(named('call_loop_ended').reason, 'failed');
   assert.equal(named('call_finished').code, 'DOT_VOICE_ENDED_BEFORE_CONNECT');
   assert.ok(logged.every(e => e.call === JOB.id || e.ev === 'extension_started'));
+});
+
+test('idle polls keep the Dot tab ready and log when a tab is opened', async () => {
+  const f = await fixture({config: {callingEnabled: true, hiddenBridge: true}, backend: {pulse: {}, keep: {action: 'opened'},
+    'registered-session': {url: 'http://127.0.0.1:8894/bridge/#' + 'a'.repeat(64)}}});
+  for (let i = 0; i < 10; i++) await flush();
+  assert.ok(f.browser.includes('keep'));
+  const logged = f.requests.filter(([a]) => a === 'log').flatMap(([, body]) => body.events);
+  assert.equal(logged.find(e => e.ev === 'dot_tab_kept_ready')?.action, 'opened');
 });

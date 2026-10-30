@@ -66,6 +66,31 @@ async function refreshDotTabs() {
     await refreshTabIfNeeded(tab.id).catch(()=>{});
   }
 }
+// Between calls, keep one Dot tab loaded so no call starts Dot in a page that has
+// just opened: on 28 and 30 October every failed call began in such a tab.
+const DOT_HOME='https://chatgpt.com/dots/home';
+let lastDotTabCheck=0, lastDotTabOpened=0;
+async function keepDotTabReady() {
+  if(Date.now()-lastDotTabCheck<30000 || await owned()) return null;
+  lastDotTabCheck=Date.now();
+  const tabs=await chrome.tabs.query({url:'https://chatgpt.com/dots/*'});
+  if(tabs.length) {
+    const reloaded=[];
+    for(const tab of tabs) {
+      // Chrome's Memory Saver may unload background tabs; a reload brings the page back early.
+      if(tab.autoDiscardable!==false) await chrome.tabs.update(tab.id,{autoDiscardable:false}).catch(()=>{});
+      if(tab.discarded) {await chrome.tabs.reload(tab.id);reloaded.push(tab.id);}
+    }
+    return reloaded.length?{action:'reloaded',tabs:reloaded.length}:null;
+  }
+  // A tab the owner closes comes back at most every 10 minutes.
+  if(Date.now()-lastDotTabOpened<600000) return null;
+  lastDotTabOpened=Date.now();
+  const tab=await chrome.tabs.create({url:DOT_HOME,active:false,pinned:true});
+  await chrome.tabs.update(tab.id,{autoDiscardable:false}).catch(()=>{});
+  await chrome.storage.local.set({preferredTabId:tab.id});
+  return {action:'opened'};
+}
 // Dot's playback goes to BlackHole 2ch per tab; the Mac's default output is never changed.
 const DOT_OUTPUT = {output:'blackhole-2ch'};
 // Dot may create its players only once voice connects. Tests shorten this wait.
@@ -143,7 +168,7 @@ async function command(message) {
       || tabs.sort((a,b)=>(b.lastAccessed||0)-(a.lastAccessed||0))[0];
     const began=Date.now();
     const existing=!message.diagnostic_new_tab && selected;
-    const tab = existing || await chrome.tabs.create({url:'https://chatgpt.com/dots/home',active:true});
+    const tab = existing || await chrome.tabs.create({url:DOT_HOME,active:true});
     const deadline=Date.now()+15000;
     await focusTab(tab);
     await waitForDotDocument(tab.id,deadline);

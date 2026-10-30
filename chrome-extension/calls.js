@@ -45,6 +45,7 @@ function dotState(inspected) {
   return {dot_active:!!inspected.active,dot_connected:!!inspected.connected,microphone_verified:!!inspected.microphone_verified,
     microphone_track:inspected.microphone_track??null,microphone_error:inspected.error??null,
     ...flat({microphone_events:inspected.microphone_events}),suspended_contexts:inspected.output?.suspended_contexts??null,
+    dot_players_seen:inspected.output?.seen_elements??null,dot_players_routed:inspected.output?.routed_elements??null,
     output_errors:inspected.output?.errors?.join(' ')||null};
 }
 
@@ -166,9 +167,18 @@ async function pollCloud() {
     }
     const result=await cloudRequest('pulse',{ready:true,busy:false,audio_guard_version:1});
     if(result.job) void runCall(result.job);
+    else await warmDotTab();
   } catch(error) {
     await chrome.storage.local.set({lastCloudError:{at:Date.now(),code:error.message}});
   } finally {polling=false;}
+}
+
+// Idle upkeep of the Dot tab; a failure here never affects polling or calls.
+async function warmDotTab() {
+  try {
+    const result=await keepDotTabReady();
+    if(result) trace('dot_tab_kept_ready',result);
+  } catch(error) {trace('dot_tab_keep_failed',{code:browserErrorCode(error)});}
 }
 
 async function boot() {

@@ -17,9 +17,9 @@ function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false,
     action:{onClicked:{addListener:noop}},alarms:{create:noop,onAlarm:{addListener:noop}},
     storage:{local:{get:async key=>({[key]:values[key]}),set:async v=>Object.assign(values,v),remove:async k=>{delete values[k];}}},
     tabs:{query:async()=>tabs,get:async id=>{const tab=tabs.find(t=>t.id===id);if(tab?.status==='loading'&&++loadChecks>=3){tab.status='complete';tab.url='https://chatgpt.com/dots/home';}return tab;},
-      create:async options=>{const tab={id:3,windowId:9,url:'about:blank',pendingUrl:options.url,status:'loading'};tabs.push(tab);events.push(['create',3]);return tab;},
+      create:async options=>{const tab={id:3,windowId:9,url:'about:blank',pendingUrl:options.url,status:'loading',active:!!options.active,pinned:!!options.pinned};tabs.push(tab);events.push(['create',3]);return tab;},
       reload:async id=>{events.push(['reload',id]);hookPresent=true;},
-      update:async(id,changes)=>{events.push(['activate',id]);return Object.assign(tabs.find(t=>t.id===id),changes);},
+      update:async(id,changes)=>{events.push([changes.active?'activate':'update',id]);return Object.assign(tabs.find(t=>t.id===id),changes);},
       sendMessage:async(id,message)=>{
         events.push(['message',id,message.action]);
         if(tabs.find(t=>t.id===id)?.status==='loading')throw Error('Could not establish connection. Receiving end does not exist.');
@@ -50,7 +50,7 @@ function fixture({microphoneVerified=true, hookPresent=true, delayedStart=false,
     WebSocket:class {static OPEN=1;static CONNECTING=0;readyState=0;},
     setTimeout,clearTimeout,setInterval,clearInterval,Date});
   vm.runInContext(source,context);
-  return {events,values,run:expression=>vm.runInContext(expression,context),refresh:()=>vm.runInContext('refreshDotTabs()',context),invoke:message=>{context.message=message;return vm.runInContext('command(message)',context);}};
+  return {events,values,tabs,run:expression=>vm.runInContext(expression,context),refresh:()=>vm.runInContext('refreshDotTabs()',context),invoke:message=>{context.message=message;return vm.runInContext('command(message)',context);}};
 }
 test('prepare chooses the active Dot tab and activates it before inspecting',async()=>{
   const f=fixture();const result=await f.invoke({action:'prepare'});
@@ -153,4 +153,30 @@ test('routed output lets the call report connected with its routing report',asyn
   const result=await f.invoke({action:'start',job_id:'job',tab_id:2,duration_seconds:120});
   assert.equal(result.connected,true);assert.equal(result.output_verified,true);
   assert.equal(result.output.routed_elements,2);
+});
+
+test('between calls one Dot tab is kept loaded and never unloaded by Chrome',async()=>{
+  const f=fixture();f.tabs[0].discarded=true;
+  const kept=await f.run('keepDotTabReady()');
+  assert.equal(kept.action,'reloaded');
+  assert.ok(f.tabs.every(t=>t.autoDiscardable===false));
+  assert.ok(f.events.some(e=>e[0]==='reload'&&e[1]===1));
+  assert.ok(!f.events.some(e=>e[0]==='create'||e[0]==='activate'),'an existing tab is neither duplicated nor focused');
+  assert.equal(await f.run('keepDotTabReady()'),null,'checks run at most every 30 seconds');
+});
+test('with no Dot tab one opens in the background, pinned, and a closed one returns at most every 10 minutes',async()=>{
+  const f=fixture({newTabLoading:true});
+  assert.equal((await f.run('keepDotTabReady()')).action,'opened');
+  assert.equal(f.tabs.length,1);
+  assert.equal(f.tabs[0].active,false);assert.equal(f.tabs[0].pinned,true);assert.equal(f.tabs[0].autoDiscardable,false);
+  assert.equal(f.values.preferredTabId,3);
+  assert.ok(!f.events.some(e=>e[0]==='activate'||e[0]==='focus'),'opening it never steals focus');
+  f.tabs.splice(0);f.run('lastDotTabCheck=0');
+  assert.equal(await f.run('keepDotTabReady()'),null);
+  assert.equal(f.tabs.length,0);
+});
+test('a Dot tab owned by a call is left alone',async()=>{
+  const f=fixture({newTabLoading:true});f.values.owned={jobId:'job',tabId:2};
+  assert.equal(await f.run('keepDotTabReady()'),null);
+  assert.equal(f.tabs.length,0);
 });

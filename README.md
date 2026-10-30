@@ -160,7 +160,7 @@ Now explicitly ask Dot Phone Local to call you. Confirm audio in both directions
 
 ## Everyday use and updates
 
-Keep the Mac awake, Chrome open, and Dot signed in. The menu-bar app starts at login. The app's **Open logs** action opens local diagnostics. You do not need `npm start` while the app runs; both would compete for port 8894.
+Keep the Mac awake, Chrome open, and Dot signed in. The menu-bar app starts at login. Between calls the extension keeps one Dot tab loaded: if none is open it opens a pinned one in the background (without taking focus), and it stops Chrome from unloading that tab to save memory. If you close it, it returns within 10 minutes. The app's **Open logs** action opens local diagnostics. You do not need `npm start` while the app runs; both would compete for port 8894.
 
 After quitting, relaunch with:
 

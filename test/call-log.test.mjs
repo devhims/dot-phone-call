@@ -149,3 +149,26 @@ test('the two live calls of 28 October read correctly', () => {
     at(9,'backend','call_ending',{call:JOB,reason:'twilio_client_disconnected'})].join('\n'));
   assert.match(diagnose(groupCalls(dropped).get(JOB)).findings[0],/connection to Twilio dropped/);
 });
+
+test('the 30 October call reads as Dot restarting its voice, and a two-minute cutoff reads as the time limit', () => {
+  const silent=(s)=>at(s,'bridge','audio',{call:JOB,seconds:5,caller_peak_db:-16,caller_active_s:5,dot_peak_db:-100,dot_active_s:0,sent_peak_db:-100,sent_active_s:0});
+  const events=parseLog([
+    at(0,'backend','dot_tool_start_call',{call:JOB,status:'queued',time_limit_s:120}),
+    at(3,'extension','call_job_received',{call:JOB,direction:'outbound',time_limit_s:120}),
+    at(29.6,'extension','dot_connected',{call:JOB}),
+    at(29.6,'extension','dot_state',{call:JOB,dot_active:true,microphone_track:'live',dot_players_seen:2}),
+    silent(36),silent(41),silent(46),silent(51),
+    at(40,'extension','dot_state',{call:JOB,dot_active:true,microphone_track:'live',dot_players_seen:3}),
+    at(53.3,'extension','dot_state',{call:JOB,dot_active:false,microphone_track:'ended',dot_players_seen:3}),
+    at(53.3,'extension','call_loop_ended',{call:JOB,reason:'dot_hung_up'}),
+    at(53.3,'backend','call_ending',{call:JOB,reason:'extension_finished'}),
+  ].join('\n'));
+  const text=diagnose(groupCalls(events).get(JOB)).findings.join('\n');
+  assert.match(text,/Dot's voice session ended/);
+  assert.match(text,/At 0:40 Dot created another audio player \(3 in all\)/);
+  assert.doesNotMatch(text,/microphone track was ended/,'a track that ends with the session is not a fault');
+  const limited=parseLog([at(0,'extension','call_job_received',{call:JOB,direction:'outbound',time_limit_s:120}),
+    at(35,'extension','dot_connected',{call:JOB}),at(155,'bridge','call_disconnected',{call:JOB,connected_s:119}),
+    at(155,'backend','call_ending',{call:JOB,reason:'twilio_client_disconnected'})].join('\n'));
+  assert.match(diagnose(groupCalls(limited).get(JOB)).findings[0],/time limit of 120 seconds \(the default when Dot does not ask for longer\)/);
+});

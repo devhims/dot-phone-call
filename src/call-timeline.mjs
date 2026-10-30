@@ -68,11 +68,17 @@ function endingReason(events) {
   const reason=ending?.reason;
   if(reason==='end_requested'||(!reason&&loop?.reason==='end_requested'))
     return dotTool?'Dot used its hang-up tool.':'A hang-up was requested (Dot, the extension or the menu bar).';
-  // Twilio disconnects Chrome's leg when the phone side ends, so this is the usual hang-up.
-  if(reason==='twilio_client_disconnected')
+  // Twilio disconnects Chrome's leg when the phone side ends, and also when its time limit
+  // for that leg runs out, so the connected time tells the two apart.
+  if(reason==='twilio_client_disconnected') {
+    const limit=first(events,'call_job_received','dot_tool_start_call','dialing_owner')?.time_limit_s;
+    const connected=first(events,'call_disconnected')?.connected_s;
+    if(Number.isFinite(limit)&&Number.isFinite(connected)&&connected>=limit-3)
+      return `The call reached its time limit of ${limit} seconds${limit===120?' (the default when Dot does not ask for longer)':''}.`;
     return first(events,'call_error','call_reconnecting')
       ? "Chrome's connection to Twilio dropped."
       : 'The call ended from the phone side: you hung up, or the phone network dropped the call.';
+  }
   if(reason==='extension_finished'||!reason) {
     if(loop?.reason==='dot_hung_up')return dotTool?'Dot used its hang-up tool.':"Dot's voice session ended (Dot hung up, or the Dot tab's Hang up was pressed).";
     if(loop?.reason==='dot_microphone_lost')return 'Dot lost the phone audio it uses as its microphone, so the extension ended the call.';
@@ -128,9 +134,16 @@ function audioFindings(events,start) {
   return findings;
 }
 function dotStateFindings(events,start) {
-  const findings=[];
+  const findings=[];let players=null;
   for(const e of events.filter(e=>e.ev==='dot_state')) {
-    if(e.microphone_track==='muted'||e.microphone_track==='ended')findings.push(`At ${clock(e.at,start)} Dot's phone-audio microphone track was ${e.microphone_track}, so Dot could not hear you.`);
+    // A track that ends with Dot's session is normal cleanup; only a live session matters.
+    if(e.dot_active&&(e.microphone_track==='muted'||e.microphone_track==='ended'))
+      findings.push(`At ${clock(e.at,start)} Dot's phone-audio microphone track was ${e.microphone_track} while Dot was still in the call, so Dot could not hear you.`);
+    if(Number.isFinite(e.dot_players_seen)) {
+      if(players!==null&&e.dot_players_seen>players)
+        findings.push(`At ${clock(e.at,start)} Dot created another audio player (${e.dot_players_seen} in all). Dot's page usually does this when its voice connection restarts.`);
+      players=e.dot_players_seen;
+    }
   }
   return [...new Set(findings)];
 }
