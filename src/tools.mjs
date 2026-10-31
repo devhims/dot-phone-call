@@ -47,7 +47,7 @@ export function makeMcpServer({ readStatus = async () => ({ configured: false })
     server.registerTool('start_owner_call', {
       title:'Call me with Dot’s native voice',
       description:'Place one call to the saved owner through the paired Mac. Automatically starts this account’s Dot browser voice session and restores audio after hangup. Requires the Mac companion and Chrome extension online. No additional LLM, TTS, arbitrary phone number, or question text. Reuse request_key on retries. Returns queued status and a hangup tool with this call’s ID. Use that tool when asked to disconnect; do not only acknowledge. Check get_owner_call for progress.',
-      inputSchema:{request_key:z.string().min(8).max(100),duration_seconds:z.number().int().min(20).max(600).default(120)},
+      inputSchema:{request_key:z.string().min(8).max(100),duration_seconds:z.number().int().min(20).max(600).default(600)},
       annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:true},
     }, async input => result(callControls(await startCall(input))));
     server.registerTool('get_owner_call', {

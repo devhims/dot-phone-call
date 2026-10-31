@@ -74,7 +74,7 @@ function endingReason(events) {
     const limit=first(events,'call_job_received','dot_tool_start_call','dialing_owner')?.time_limit_s;
     const connected=first(events,'call_disconnected')?.connected_s;
     if(Number.isFinite(limit)&&Number.isFinite(connected)&&connected>=limit-3)
-      return `The call reached its time limit of ${limit} seconds${limit===120?' (the default when Dot does not ask for longer)':''}.`;
+      return `The call reached its time limit of ${limit} seconds${limit===600?' (the longest a call can run)':''}.`;
     return first(events,'call_error','call_reconnecting')
       ? "Chrome's connection to Twilio dropped."
       : 'The call ended from the phone side: you hung up, or the phone network dropped the call.';

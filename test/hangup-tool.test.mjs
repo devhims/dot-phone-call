@@ -32,6 +32,7 @@ test('a call result supplies an executable hangup control for that exact call',a
  try {
   const started=(await client.callTool({name:'start_owner_call',arguments:{request_key:'local-no-phone-test'}})).structuredContent;
   assert.equal(started.hangup.tool,'end_owner_call');
+  assert.equal(started.duration_seconds,600,'a call Dot starts without a length may run 10 minutes');
   assert.deepEqual(started.hangup.arguments,{call_id:started.id});
   const progress=(await client.callTool({name:'get_owner_call',arguments:{call_id:started.id}})).structuredContent;
   assert.deepEqual(progress.hangup,started.hangup);
